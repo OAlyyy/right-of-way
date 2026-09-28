@@ -240,6 +240,7 @@ h1 em{ font-style:normal; color:var(--accent-deep); }
 .drive-cta-txt{ flex:1 1 240px; }
 .drive-cta-title{ font-family:var(--font-label); font-weight:700; font-size:16px; letter-spacing:.02em; }
 .drive-cta-sub{ font-size:13px; color:var(--ink-2); margin-top:2px; }
+.drive-cta-btns{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
 .tally{
   display:flex; align-items:center; gap:10px;
@@ -562,8 +563,10 @@ kbd{
 .ref-en{ font-size:12px; color:var(--ink-3); }
 
 /* --------------------------- responsive -------------------------- */
+#btn-end-hud{ display:none; }
 @media (max-width:960px){
   #side{ display:none; }
+  #btn-end-hud{ display:block; }
   #hud-task{ display:block; }
   #hud{ flex-wrap:wrap; }
 }
@@ -639,7 +642,10 @@ kbd{
         <div class="drive-cta-title" data-t="drive.cta.title"></div>
         <div class="drive-cta-sub" data-t="drive.cta.sub"></div>
       </div>
-      <button id="btn-drive" class="primary" type="button" data-t="drive.cta.button"></button>
+      <div class="drive-cta-btns">
+        <button id="btn-drive" class="primary" type="button" data-t="drive.cta.button"></button>
+        <button id="btn-drive-random" class="ghost small" type="button" data-t="drive.cta.random"></button>
+      </div>
     </div>
 
     <div class="tally">
@@ -681,6 +687,8 @@ kbd{
             <div class="chip readout"><span id="hud-time-label" data-t="hud.time"></span> <b id="hud-time">45</b></div>
             <div class="chip readout"><span data-t="hud.faults"></span> <b id="hud-faults">0</b></div>
             <button id="btn-view" class="chip readout btn" type="button">2D</button>
+            <!-- the sidebar (and its End drive button) is hidden on narrow screens -->
+            <button id="btn-end-hud" class="chip readout btn hidden" type="button" data-t="drive.endShort"></button>
           </div>
           <canvas id="minimap" width="296" height="296"></canvas>
         </div>
@@ -901,8 +909,10 @@ var I18N = (function(){
                'waits for pedestrians, and rail vehicles go first.',
 
       'drive.cta.title':'Ready for the real thing?',
-      'drive.cta.sub':'Drive an open Frankfurt-style town: every junction kind, one after another, no script.',
-      'drive.cta.button':'Free drive',
+      'drive.cta.sub':'Drive the streets around Weißer Stein in Frankfurt-Eschersheim: traffic lights, ' +
+                      'the U-Bahn beside the main road, Tempo-30 side streets with rechts vor links. Get it wrong, rewind, try again.',
+      'drive.cta.button':'Drive Frankfurt',
+      'drive.cta.random':'Random town',
       'drive.fault.stopped':'Hold on a moment',
       'drive.fault.sub':'Here is what just went wrong:',
       'drive.fault.continue':'Drive on (keep the mistake)',
@@ -911,7 +921,7 @@ var I18N = (function(){
       'drive.fault.rewindKey':'Space',
       'drive.hold':'Rewound {s} s. Press GAS (W) to try again — {tip}',
       'drive.hold.retrying':'Retrying: {what}',
-      'drive.end':'End drive',
+      'drive.end':'End drive', 'drive.endShort':'End',
       'drive.result.title':'Drive ended',
       'drive.result.sub':'{a} junctions driven cleanly.',
       'drive.result.explained':'Mistakes still on your sheet:',
@@ -976,9 +986,10 @@ var I18N = (function(){
                'warten auf Fussgänger, Schienenfahrzeuge haben Vorrang.',
 
       'drive.cta.title':'Bereit für den Ernstfall?',
-      'drive.cta.sub':'Fahr frei durch eine Stadt im Frankfurter Stil: jede Kreuzungsart, ' +
-                       'nacheinander, ohne Drehbuch.',
-      'drive.cta.button':'Freie Fahrt',
+      'drive.cta.sub':'Fahr durch die Straßen rund um den Weißen Stein in Frankfurt-Eschersheim: Ampeln, ' +
+                       'die U-Bahn neben der Hauptstraße, Tempo-30-Straßen mit rechts vor links. Fehler gemacht? Zurückspulen, nochmal.',
+      'drive.cta.button':'Frankfurt fahren',
+      'drive.cta.random':'Zufällige Stadt',
       'drive.fault.stopped':'Einen Moment bitte',
       'drive.fault.sub':'Das ist gerade schiefgelaufen:',
       'drive.fault.continue':'Weiterfahren (Fehler zählt)',
@@ -987,7 +998,7 @@ var I18N = (function(){
       'drive.fault.rewindKey':'Leertaste',
       'drive.hold':'{s} s zurückgespult. GAS (W) drücken und nochmal versuchen — {tip}',
       'drive.hold.retrying':'Neuer Versuch: {what}',
-      'drive.end':'Fahrt beenden',
+      'drive.end':'Fahrt beenden', 'drive.endShort':'Ende',
       'drive.result.title':'Fahrt beendet',
       'drive.result.sub':'{a} Kreuzungen fehlerfrei gemeistert.',
       'drive.result.explained':'Diese Fehler stehen noch auf deinem Bogen:',
@@ -1332,14 +1343,18 @@ var Rules = (function(){
        'follow'     -> same approach arm, a queue
      ------------------------------------------------------------------ */
   function priority(sc, a, b, t){
-    if (a.fromArm === b.fromArm)
+    /* A train beside the road coming the same way as a car is not queueing
+       behind it: the car turning off across the tracks must let it pass. */
+    var oneTram = (a.kind === 'tram') !== (b.kind === 'tram');
+    if (a.fromArm === b.fromArm && !oneTram)
       return { who:'follow', reason:'same_arm' };
 
     var ra = rankOf(sc, a, t), rb = rankOf(sc, b, t);
 
-    if (sc.railPriority && ra === rb){
-      if (a.kind === 'tram' && b.kind !== 'tram') return { who:'a', reason:'schiene' };
-      if (b.kind === 'tram' && a.kind !== 'tram') return { who:'b', reason:'schiene' };
+    if (sc.railPriority && ra === rb && oneTram){
+      /* at lights both have green: the turning rule, Sec. 9 (3) */
+      var why = sc.lights ? 'schiene_abbiegen' : 'schiene';
+      return { who: a.kind === 'tram' ? 'a' : 'b', reason:why };
     }
     if (a.kind === 'bus' && a.pullingOut) return { who:'a', reason:'bus' };
     if (b.kind === 'bus' && b.pullingOut) return { who:'b', reason:'bus' };
@@ -1418,6 +1433,12 @@ var Rules = (function(){
       text:{
         de:'Schienenfahrzeuge haben an ungeregelten Kreuzungen Vorrang – auch wenn sie von links kommen.',
         en:'Trams go first at junctions without signs or lights, even coming from your left (§ 8 (1) StVO).' }
+    },
+    schiene_abbiegen: {
+      title:{ de:'Abbiegen über Gleise', en:'Turning across tram tracks' },
+      text:{
+        de:'Wer abbiegt, muss Schienenfahrzeuge durchfahren lassen – auch wenn sie neben der Fahrbahn in gleicher Richtung fahren und du Grün hast.',
+        en:'When you turn, you must let trams through first, even when they run beside the road in the same direction as you and you have green (§ 9 (3) StVO).' }
     },
     bus: {
       title:{ de:'Linienbus fährt ab', en:'Bus leaving its stop' },
@@ -1981,6 +2002,8 @@ var Sim = (function(){
   /* speed we may still have now in order to be stopped at distance d */
   /* Is this vehicle actually coming, or is it parked at its own line? */
   function isApproaching(o){
+    /* a train standing at its signal is waiting for green, not parked */
+    if (o.kind === 'tram') return true;
     if (o.v > kmh(3)) return true;
     if (o.lineS !== undefined && o.s < o.lineS - 4) return false;
     return true;
@@ -2278,7 +2301,8 @@ var Sim = (function(){
          wide junction a car can clear its line well before it reaches
          where the paths actually cross, and stops needing to look out for
          someone already committed right when it matters most. */
-      if (occupying && veh.s < c.sa - 10 && tMe < 3.2)
+      /* ...and a car still standing does not move off into them at all */
+      if (occupying && veh.s < c.sa - 10 && (tMe < 3.2 || veh.v < kmh(5)))
         want(approachV(Math.max(0, c.sa - veh.s - 14), CFG.AI_DEC), o, 'occupied');
 
       var merging = (veh.toArm === o.toArm) && veh.s > veh.lineS + 6;
@@ -2316,6 +2340,8 @@ var Sim = (function(){
     for (var i=0;i<this.vehicles.length;i++){
       var o = this.vehicles[i];
       if (o === veh || o.done) continue;
+      /* a train on its track is never "the car in front" of a car */
+      if ((o.kind === 'tram') !== (veh.kind === 'tram')) continue;
       var dx = o.pos.x - veh.pos.x, dy = o.pos.y - veh.pos.y;
       if (Math.hypot(dx,dy) > 420) continue;
       var lon =  dx*c + dy*s;
@@ -2343,6 +2369,15 @@ var Sim = (function(){
       var o = this.vehicles[i];
       if (o === veh || o.done) continue;
       if (Geo.dist(o.pos, veh.pos) > 230) continue;
+      /* A stand-off: two cars nosed into the same junction, each stopped
+         for the other - or a ring of them, all inside and all standing.
+         Somebody waves somebody through; settle it the same way every
+         time so exactly one of them moves. Never applies to the player. */
+      var still = (veh.stoppedFor || 0) > 6 && (o.stoppedFor || 0) > 6 && !o.isPlayer &&
+                  veh.kind !== 'tram' && o.kind !== 'tram';        // a train never waves anyone on
+      var mutual = o.brakeCause === veh ||
+                   ((veh.stoppedFor || 0) > 20 && veh.s > veh.lineS && o.s > o.lineS);
+      if (still && mutual && String(veh.id) < String(o.id)) continue;
       near.push({ veh:o, circ:bodyCircles(o) });
     }
     if (!near.length) return { v:1e9, who:null };
@@ -2540,7 +2575,9 @@ var Sim = (function(){
            behind it we are where we belong. */
         if (!this.conflictBetween(p, o)) continue;
         if (p.s < p.lineS) continue;
-        if (Geo.dist(o.pos, p.pos) > 130) continue;
+        /* measured nose to body: a 25 m train's centre is far from the
+           car it is braking for even when its front is right there */
+        if (Geo.dist(o.pos, p.pos) - Math.max(0, o.len - CFG.CAR_L)*0.5 > 130) continue;
         var dh = Math.abs(Math.atan2(Math.sin(o.pos.h - p.pos.h), Math.cos(o.pos.h - p.pos.h)));
         if (dh < 0.6) continue;                 // same direction: just traffic
       }
@@ -2816,6 +2853,13 @@ var Sim = (function(){
         return t === 'left'
           ? { de:'Blinker links setzen.', en:'Indicate left.' }
           : { de:'Blinker rechts setzen.', en:'Indicate right.' };
+      /* turning across the tracks beside the main road */
+      var JJ = this.junctionFor(p);
+      /* only off the main road, where the train shares your green */
+      if (JJ.rail && p.toArm === JJ.rail.side && (p.fromArm === 'N' || p.fromArm === 'S') &&
+          p.s > p.lineS - 260)
+        return { de:'Du biegst über die Gleise ab: Schulterblick – Bahnen von hinten und von vorn haben Vorrang.',
+                 en:'You are turning across the tram tracks: look over your shoulder – trains from behind and ahead go first.' };
       if (p.v < kmh(3) && p.s > p.lineS - 120)
         return { de:'Frei – du darfst fahren.', en:'Clear – you may go.' };
       /* in the driver view you have to actually look before you go */
@@ -3456,18 +3500,60 @@ var City = (function(){
     return out;
   }
 
+  /* ---------------- Frankfurt-Eschersheim, around Weißer Stein ----------------
+     The real streets around the Weißer Stein U-Bahn stop, in their real
+     order, straightened onto the game's grid. Eschersheimer Landstraße is
+     the main road, lit at every junction, and the U-Bahn (U1/U2/U3/U8)
+     runs on its own track bed beside it. Am Weißen Stein crosses it as a
+     priority road; everything else is a Tempo-30 residential street where
+     rechts vor links applies - which is exactly what the real area is
+     like. One-way streets are two-way here: the engine has no one-ways.
+     Street names and junction types are from OpenStreetMap (© ODbL). */
+  var ESCHERSHEIM = {
+    cols:6, rows:5,
+    colStreets:['Niedwiesenstraße', 'Alt-Eschersheim', 'Eschersheimer Landstraße',
+                'Landgraf-Philipp-Straße', 'Neumannstraße', 'Dehnhardtstraße'],
+    rowStreets:['Zehnmorgenstraße', 'Am Weißen Stein', 'Am Lindenbaum',
+                'Höllbergstraße', 'Kleinschmidtstraße'],
+    mainCol:2, mainRow:1,
+    start:{ c:2, r:1, from:'N' },                // heading south into Weißer Stein
+    stops:{ '4,1':'stop' },                      // one real Stop sign on the way
+    zebras:{},                                   // none until free drive has pedestrians
+    gruenpfeil:{ '2,3':['W'] },
+    places:{ '2,1':'Weißer Stein', '2,2':'Lindenbaum' }
+  };
+
+  /* Where the U-Bahn's two tracks lie, measured east of the road's centre
+     line, and the lines trams and cars wait at. Right-hand running: the
+     southbound train uses the western track, the northbound the eastern. */
+  var RAIL = {
+    side:'E',
+    track:{ S:78, N:114 },           // track centre per direction of travel
+    bed:[58, 134],                   // gravel bed, between the two kerbs
+    carHold:152,                     // cars from the east wait before the tracks
+    tramHold:CFG.BOX + 22,           // trams wait before the road
+    TRAM_L:300, TRAM_W:32            // one 25 m Stadtbahn car
+  };
+
   /* ---------------- the map ---------------- */
   function Map(opts){
     opts = opts || {};
-    this.cols = opts.cols || 5;
-    this.rows = opts.rows || 4;
+    var preset = opts.preset === 'eschersheim' ? ESCHERSHEIM : null;
+    this.preset = preset;
+    this.cols = preset ? preset.cols : (opts.cols || 5);
+    this.rows = preset ? preset.rows : (opts.rows || 4);
     var rand = rng(opts.seed || 7);
     var srand = rng((opts.seed || 7) * 7919 + 104729);
     var pool = shuffled(FRANKFURT_STREETS, srand);
     this.rowStreets = []; this.colStreets = [];
     var ri, ci;
-    for (ri = 0; ri < this.rows; ri++) this.rowStreets.push(pool[ri % pool.length]);
-    for (ci = 0; ci < this.cols; ci++) this.colStreets.push(pool[(this.rows + ci) % pool.length]);
+    if (preset){
+      this.rowStreets = preset.rowStreets.slice();
+      this.colStreets = preset.colStreets.slice();
+    } else {
+      for (ri = 0; ri < this.rows; ri++) this.rowStreets.push(pool[ri % pool.length]);
+      for (ci = 0; ci < this.cols; ci++) this.colStreets.push(pool[(this.rows + ci) % pool.length]);
+    }
     this.nodes = [];
 
     var c, r, i;
@@ -3482,8 +3568,10 @@ var City = (function(){
       }
     }
     /* which streets are through-roads */
-    var priRow = 1 + Math.floor(rand()*Math.max(1, this.rows-1));
-    var priCol = 1 + Math.floor(rand()*Math.max(1, this.cols-1));
+    var priRow = preset ? preset.mainRow : 1 + Math.floor(rand()*Math.max(1, this.rows-1));
+    var priCol = preset ? preset.mainCol : 1 + Math.floor(rand()*Math.max(1, this.cols-1));
+    this.priRow = priRow; this.priCol = priCol;
+    this.railCol = preset ? preset.mainCol : -1;
 
     for (i = 0; i < this.nodes.length; i++){
       var n = this.nodes[i];
@@ -3497,8 +3585,37 @@ var City = (function(){
 
       var onPriRow = (n.r === priRow), onPriCol = (n.c === priCol);
       var roll = rand();
+      var key = n.c + ',' + n.r;
 
-      if (onPriRow && onPriCol){
+      if (preset && onPriCol){
+        /* every crossing of the main road is lit - the U-Bahn crosses
+           there too, and the tram runs with the main road's green */
+        n.lights = {
+          groups:{ N:'A', S:'A', E:'B', W:'B' }, t0: Math.floor(rand()*20),
+          /* with an all-red gap each way, so a 25 m train that took
+             the amber has time to clear the side road */
+          program:[ { A:'green', B:'red', dur:14 }, { A:'yellow', B:'red', dur:3 },
+                    { A:'red', B:'red', dur:2 },
+                    { A:'red', B:'redyellow', dur:1.5 }, { A:'red', B:'green', dur:11 },
+                    { A:'red', B:'yellow', dur:3 }, { A:'red', B:'red', dur:2 },
+                    { A:'redyellow', B:'red', dur:1.5 } ]
+        };
+        n.arms.forEach(function(a){ n.layout.signs[a] = 'none'; });
+        n.kind = 'lights';
+        n.rail = RAIL;
+        n.railPriority = true;
+        if (preset.gruenpfeil[key]) n.gruenpfeil = preset.gruenpfeil[key];
+      } else if (preset && onPriRow){
+        n.arms.forEach(function(a){
+          n.layout.signs[a] = (a === 'E' || a === 'W') ? 'priority' : (preset.stops[key] || 'yield');
+        });
+        n.kind = 'priority';
+      } else if (preset){
+        n.arms.forEach(function(a){ n.layout.signs[a] = 'none'; });
+        n.kind = 'rvl';
+        if (preset.zebras[key] && n.arms.indexOf(preset.zebras[key]) >= 0)
+          n.layout.crossings = [preset.zebras[key]];
+      } else if (onPriRow && onPriCol){
         /* two main roads meeting: put lights here */
         n.lights = {
           groups:{ N:'A', S:'A', E:'B', W:'B' }, t0: Math.floor(rand()*20),
@@ -3526,13 +3643,16 @@ var City = (function(){
       }
 
       /* a zebra crossing on some approaches of quiet junctions */
-      if (n.kind === 'rvl' && rand() > 0.72){
+      if (!preset && n.kind === 'rvl' && rand() > 0.72){
         n.layout.crossings = [n.arms[Math.floor(rand()*n.arms.length)]];
       }
       n.limit = (n.kind === 'rvl' || n.kind === 'roundabout') ? 30 : 50;
       /* the rule engine reads these off an object shaped like a scenario */
-      n.railPriority = false;
+      if (!n.rail) n.railPriority = false;
+      if (preset && preset.places[key]) n.place = preset.places[key];
     }
+    /* a stable look for every block of houses, from its own seed */
+    this.blockSeed = (opts.seed || 7) * 131 + 17;
     this.nodeAt = function(cc, rr){
       if (cc < 0 || rr < 0 || cc >= this.cols || rr >= this.rows) return null;
       return this.nodes[rr*this.cols + cc];
@@ -3589,7 +3709,12 @@ var City = (function(){
 
     route.forEach(function(step, i){
       var piece = junctionPiece(step.from, step.to, step.node.layout.type);
-      var startIdx = pts.length;
+      /* the link before this junction already ends on the piece's first
+         point, which push() then drops as a duplicate - the junction
+         starts at that shared point, not at the one after it */
+      var first = { x:step.node.x + piece[0].x, y:step.node.y + piece[0].y };
+      var startIdx = (pts.length && Geo.dist(pts[pts.length-1], first) <= 0.5)
+                   ? pts.length - 1 : pts.length;
       piece.forEach(function(q){ push({ x:step.node.x + q.x, y:step.node.y + q.y }); });
       marks.push({ step:step, startIdx:startIdx, endIdx:pts.length - 1 });
       var nxt = route[i+1];
@@ -3607,7 +3732,9 @@ var City = (function(){
       var n = m.step.node;
       /* the give-way line is set back from the carriageway edge, so a car
          waiting at it stands clear of the traffic crossing in front */
-      var holdR = n.layout.type === 'roundabout' ? CFG.RING + 76 : CFG.BOX + 34;
+      var holdR = n.layout.type === 'roundabout' ? CFG.RING + 76
+                : (n.rail && m.step.from === n.rail.side) ? n.rail.carHold   // before the tracks
+                : CFG.BOX + 34;
       var enterS = path.cum[m.startIdx];
       var exitS  = path.cum[m.endIdx];
       /* the give-way line: first point inside holdR, searched only
@@ -3623,10 +3750,52 @@ var City = (function(){
     return { path:path, steps:steps };
   };
 
+  /* ---------------- the U-Bahn ---------------- */
+  /* One straight run down the whole main road, per direction, with the
+     same landmarks a car's route carries for every junction it crosses:
+     where the junction's geometry starts and ends, and where the train
+     waits at a red light (short of the side road it crosses). */
+  Map.prototype.tramRoute = function(dir){
+    if (this.railCol < 0) return null;
+    var col = [], r;
+    for (r = 0; r < this.rows; r++) col.push(this.nodeAt(this.railCol, r));
+    var south = dir === 'S';
+    if (!south) col.reverse();
+    var x = col[0].x + RAIL.track[dir];
+    var run = ENTRY + LINK + 400;
+    var y0 = south ? col[0].y - run : col[0].y + run;
+    var y1 = south ? col[col.length-1].y + run : col[col.length-1].y - run;
+    var path = new Geo.Path([{ x:x, y:y0 }, { x:x, y:y1 }]);
+    function sAt(y){ return Math.abs(y - y0); }
+    var k = south ? 1 : -1;
+    var steps = col.map(function(n){
+      return { node:n, from: south ? 'N' : 'S', to: south ? 'S' : 'N',
+               enterS: sAt(n.y - k*ENTRY), exitS: sAt(n.y + k*ENTRY),
+               junctionS: sAt(n.y - k*RAIL.tramHold) };
+    });
+    return { path:path, steps:steps };
+  };
+
+  /* Where a train on track `dir` and a car making the move from->to meet
+     inside one junction, both measured from the start of that junction's
+     geometry. Turning off the main road across the tracks is the classic
+     case: Sec. 9 (3) StVO makes you let the train through first. */
+  var RAIL_CONFLICT = {};
+  function railConflict(dir, from, to){
+    var key = dir + '|' + from + to;
+    if (key in RAIL_CONFLICT) return RAIL_CONFLICT[key];
+    var x = RAIL.track[dir], k = dir === 'S' ? 1 : -1;
+    var tram = new Geo.Path([{ x:x, y:-k*ENTRY }, { x:x, y:k*ENTRY }]);
+    var car  = new Geo.Path(junctionPiece(from, to, 'cross'));
+    var c = Geo.conflictOf(tram, car, RAIL.TRAM_W/2 + CFG.CAR_W/2 + 10);
+    return (RAIL_CONFLICT[key] = c ? { st:c.sa, sc:c.sb } : null);
+  }
+
   return {
-    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK,
+    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK, RAIL:RAIL,
     Map:Map, junctionPiece:junctionPiece,
     localConflict:localConflict, buildConflictTable:buildConflictTable,
+    railConflict:railConflict,
     rng:rng
   };
 })();
@@ -3653,10 +3822,16 @@ var Drive = (function(){
   /* ---------------- the world ---------------- */
   function DriveWorld(opts){
     opts = opts || {};
-    this.map  = new City.Map({ cols:opts.cols || 5, rows:opts.rows || 4, seed:opts.seed || 7 });
+    this.map  = new City.Map({ cols:opts.cols || 5, rows:opts.rows || 4, seed:opts.seed || 7,
+                               preset:opts.preset });
+    this.nextTram = { S:0, N:0 };
     this.rand = City.rng((opts.seed || 7) * 31 + 11);
     this.sc   = { limit:50, timeLimit:1e9, layout:{ type:'cross', arms:Geo.ARM_ORDER, signs:{} },
                   points:[], title:'Freie Fahrt', en:'Free drive' };
+    if (opts.preset === 'eschersheim'){
+      this.sc.title = 'Frankfurt-Eschersheim · Weißer Stein';
+      this.sc.en    = 'Frankfurt-Eschersheim · Weißer Stein';
+    }
     this.t = 0;
     this.vehicles = [];
     this.peds = [];
@@ -3681,9 +3856,9 @@ var Drive = (function(){
   /* ---------------- building ---------------- */
   DriveWorld.prototype.build = function(){
     City.buildConflictTable();
-    var m = this.map;
-    var start = m.nodeAt(0, m.rows - 1) || m.nodes[0];
-    var startArm = start.arms.indexOf('S') >= 0 ? 'S' : start.arms[0];
+    var m = this.map, ps = m.preset && m.preset.start;
+    var start = ps ? m.nodeAt(ps.c, ps.r) : (m.nodeAt(0, m.rows - 1) || m.nodes[0]);
+    var startArm = ps ? ps.from : (start.arms.indexOf('S') >= 0 ? 'S' : start.arms[0]);
 
     this.player = this.makeCar({
       node:start, from:startArm, steps:60, isPlayer:true,
@@ -3694,9 +3869,51 @@ var Drive = (function(){
     this.vehicles.push(this.player);
 
     for (var i = 0; i < TARGET_TRAFFIC; i++) this.spawnTraffic(true);
+    /* one train already somewhere on each track */
+    if (m.railCol >= 0){
+      this.spawnTram('S', 900 + this.rand()*2500);
+      this.spawnTram('N', 900 + this.rand()*2500);
+    }
   };
 
-  var CAR_COLORS = ['#e0574a','#e8b93c','#54a86b','#d8dde3','#7a6fd0','#3f8fd0','#c97b3f'];
+  /* ---------------- the U-Bahn ---------------- */
+  DriveWorld.prototype.spawnTram = function(dir, s){
+    var tr = this.map.tramRoute(dir);
+    if (!tr) return null;
+    var R = City.RAIL;
+    var v = new Sim.Vehicle({
+      path:tr.path, fromArm:tr.steps[0].from, toArm:tr.steps[0].to,
+      kind:'tram', len:R.TRAM_L, wid:R.TRAM_W, color:'#ecebe6',
+      cruise:kmh(40), v:kmh(s ? 36 : 40), s:s || 0, track:dir,
+      id:'t' + (this.nextId = (this.nextId || 0) + 1)
+    });
+    v.steps = tr.steps;
+    v.stepIdx = 0;
+    this.syncStep(v, true);
+    v.pos = v.path.at(v.s);
+    /* never drop a train onto somebody */
+    for (var i = 0; i < this.vehicles.length; i++){
+      var o = this.vehicles[i];
+      if (Geo.dist(o.pos, v.pos) < (o.len + v.len)*0.5 + 40) return null;
+    }
+    this.vehicles.push(v);
+    return v;
+  };
+  DriveWorld.prototype.manageTrams = function(){
+    if (this.map.railCol < 0) return;
+    var self = this;
+    ['S','N'].forEach(function(dir){
+      var running = self.vehicles.some(function(v){ return v.kind === 'tram' && v.track === dir && !v.done; });
+      if (running){ self.nextTram[dir] = self.t + 18 + self.rand()*20; return; }
+      if (self.t >= self.nextTram[dir]) self.spawnTram(dir, 0);
+    });
+  };
+
+  /* what a German street actually looks like: mostly silver, grey,
+     black, white and dark blue, the odd red - and ivory taxis */
+  var CAR_COLORS = ['#c9ccd1','#b7bbc1','#6d7177','#2b2f36','#1d1f23','#f1f1ee','#e4e5e2',
+                    '#1f3a5f','#2d4a6e','#9e2b25','#3d5a4a','#8a7f6d'];
+  var TAXI = '#efe6c8';
 
   DriveWorld.prototype.makeCar = function(o){
     var route = this.map.buildRoute(o.node, o.from, o.steps, this.rand);
@@ -3714,6 +3931,7 @@ var Drive = (function(){
     });
     v.steps = built.steps;
     v.stepIdx = 0;
+    if (!o.isPlayer && !o.color && this.rand() < 0.07){ v.taxi = true; v.color = TAXI; }
     this.syncStep(v, true);
     v.pos = v.path.at(v.s);
     return v;
@@ -3757,6 +3975,17 @@ var Drive = (function(){
   /* Two cars conflict only if they are both at the same junction. */
   DriveWorld.prototype.conflictBetween = function(a, b){
     if (!a.node || !b.node || a.node !== b.node) return null;
+    /* a train against a car: its own table, since a train on the main
+       road still crosses the car turning off it from the same arm */
+    var at = a.kind === 'tram', bt = b.kind === 'tram';
+    if (at || bt){
+      if (at && bt) return null;                  // separate tracks
+      var tram = at ? a : b, car = at ? b : a;
+      var rc = City.railConflict(tram.track, car.fromArm, car.toArm);
+      if (!rc) return null;
+      var st = tram.enterS + rc.st, sc = car.enterS + rc.sc;
+      return at ? { sa:st, sb:sc } : { sa:sc, sb:st };
+    }
     if (a.fromArm === b.fromArm) return null;
     /* A roundabout's conflict table is still built from straight-line
        "cross" geometry (buildConflictTable always passes kind:'cross'),
@@ -3803,16 +4032,20 @@ var Drive = (function(){
       var v = this.vehicles[i];
       if (v.isPlayer){ keep.push(v); continue; }
       var d = Geo.dist(v.pos, p.pos);
-      var far = d > DESPAWN_FAR;
+      /* a train runs its whole line on schedule, wherever you are */
+      var far = d > DESPAWN_FAR && v.kind !== 'tram';
       var finished = v.s >= v.path.length - 8;
       /* last resort: something wedged itself somewhere out of sight */
       var wedged = (v.stoppedFor || 0) > 25 && d > 900;
       if (!far && !finished && !wedged) keep.push(v);
     }
     this.vehicles = keep;
-    while (this.vehicles.length < TARGET_TRAFFIC + 1) {
+    var cars = keep.filter(function(v){ return v.kind !== 'tram'; }).length;
+    while (cars < TARGET_TRAFFIC + 1) {
       if (!this.spawnTraffic()) break;
+      cars++;
     }
+    this.manageTrams();
   };
 
   /* ---------------- update ---------------- */
@@ -4044,6 +4277,190 @@ var Drive = (function(){
   return { DriveWorld:DriveWorld };
 })();
 
+/* ---------- js/cityview.js ---------- */
+'use strict';
+/* ------------------------------------------------------------------
+   cityview.js - what the open world looks like, apart from the road.
+
+   Lays out, once per map, everything the two views draw around the
+   streets: blocks of houses along every block edge, trees and street
+   lamps on the pavements, the U-Bahn's track bed. Pure geometry - no
+   drawing here - so the driver's view and the map view show the same
+   town, and a seed always rebuilds the same one.
+
+   Measurements from the centre line of a street outwards:
+     0 .. 48      carriageway (two 4 m lanes)
+     48 .. 55     kerb
+     55 .. 91     pavement (3 m)
+     91 ..        front gardens, then houses
+   Beside the main road the U-Bahn's bed (58 .. 134) comes first.
+   ------------------------------------------------------------------ */
+
+var CityView = (function(){
+
+  var M = CFG.PPM;
+  var KERB = CFG.BOX + 7;          // outer edge of the kerb
+  var WALK = 36;                   // pavement width
+  var DEPTH = 150;                 // a house, front to back (12.5 m)
+
+  /* plaster colours you actually see on Frankfurt residential streets,
+     plus the odd red sandstone front */
+  var FACADES = ['#e8dcc4', '#efe7d6', '#d9c7a6', '#f2efe8', '#d8d2c6', '#e6d3b8',
+                 '#cdb79b', '#e9e1cf', '#c9ced1', '#e3cfc0', '#b8836a', '#dccba8'];
+  var ROOFS   = ['#4a4744', '#5a4038', '#7a4a3a', '#3e4145', '#6b3f33'];
+
+  function rng(seed){
+    var x = seed || 1;
+    return function(){ x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return ((x >>> 0) % 100000) / 100000; };
+  }
+
+  /* how far back from a street's centre line the houses start */
+  function setback(map, isCol, index, side){
+    if (isCol && index === map.railCol && side > 0) return City.RAIL.bed[1] + 6 + WALK;
+    return KERB + WALK;
+  }
+
+  /* ---------------- building one block ---------------- */
+  function addBlock(out, rand, x0, y0, x1, y1, fronts, main){
+    if (x1 - x0 < 120 || y1 - y0 < 120) return;
+    var d = Math.min(DEPTH, (x1 - x0)/2 - 4, (y1 - y0)/2 - 4);
+    var blk = { x0:x0, y0:y0, x1:x1, y1:y1, houses:[] };
+    function house(ax, ay, bx, by, front, onMain){
+      if (rand() < 0.10) return;                       // a gap: garden, driveway
+      var yard = rand() < 0.5 ? 0 : 10 + rand()*24;    // some sit behind a front garden
+      if (front === 'N') ay += yard; if (front === 'S') by -= yard;
+      if (front === 'W') ax += yard; if (front === 'E') bx -= yard;
+      var floors = onMain ? 4 + Math.floor(rand()*2) : 2 + Math.floor(rand()*3);
+      var h = (floors*3.0 + 0.6) * M;
+      blk.houses.push({
+        x0:ax, y0:ay, x1:bx, y1:by, h:h, floors:floors, front:front,
+        color:FACADES[Math.floor(rand()*FACADES.length)],
+        roof: rand() < 0.72 ? ROOFS[Math.floor(rand()*ROOFS.length)] : null,
+        roofH:(1.8 + rand()*1.6) * M,
+        shop: onMain && rand() < 0.7,
+        seed: Math.floor(rand()*1e6)
+      });
+    }
+    function run(a, b, place){
+      var p = a;
+      while (b - p > 60){
+        var w = 130 + rand()*110;
+        if (b - p - w < 90) w = b - p;
+        place(p, Math.min(b, p + w));
+        p += w;
+      }
+    }
+    /* long sides get the corners, short sides fill in between */
+    if (fronts.N) run(x0, x1, function(a, b){ house(a, y0, b, y0 + d, 'N', main.N); });
+    if (fronts.S) run(x0, x1, function(a, b){ house(a, y1 - d, b, y1, 'S', main.S); });
+    var ya = fronts.N ? y0 + d : y0, yb = fronts.S ? y1 - d : y1;
+    if (fronts.W) run(ya, yb, function(a, b){ house(x0, a, x0 + d, b, 'W', main.W); });
+    if (fronts.E) run(ya, yb, function(a, b){ house(x1 - d, a, x1, b, 'E', main.E); });
+    out.push(blk);
+  }
+
+  /* ---------------- the whole town ---------------- */
+  function build(map){
+    if (map._view) return map._view;
+    var rand = rng(map.blockSeed || 99);
+    var S = City.SPACING, cols = map.cols, rows = map.rows;
+    var blocks = [], trees = [], lamps = [], c, r;
+    function colX(i){ return (i - (cols-1)/2) * S; }
+    function rowY(i){ return (i - (rows-1)/2) * S; }
+    var OUT = S * 0.9;                                  // the ring of houses around the map
+
+    for (c = -1; c < cols; c++){
+      for (r = -1; r < rows; r++){
+        /* the block between column lines c, c+1 and row lines r, r+1 */
+        var hasW = c >= 0, hasE = c + 1 < cols, hasN = r >= 0, hasS = r + 1 < rows;
+        if (!hasW && !hasE) continue;
+        if (!hasN && !hasS) continue;
+        var outerRow = !hasN || !hasS, outerCol = !hasW || !hasE;
+        /* Inside the grid a block stands back from all four streets. In the
+           ring outside it, the streets have ended: neighbouring blocks close
+           up to one another, so a road that ends looks at a row of houses -
+           except where the U-Bahn carries on past the end of the main road. */
+        var x0 = !hasW ? colX(0) - OUT
+               : !outerRow ? colX(c) + setback(map, true, c, 1)
+               : c === map.railCol ? colX(c) + City.RAIL.bed[1] + 8 : colX(c);
+        var x1 = !hasE ? colX(cols-1) + OUT
+               : !outerRow ? colX(c+1) - setback(map, true, c+1, -1)
+               : c + 1 === map.railCol ? colX(c+1) + City.RAIL.bed[0] - 8 : colX(c+1);
+        var y0 = !hasN ? rowY(0) - OUT
+               : !outerCol ? rowY(r) + setback(map, false, r, 1) : rowY(r);
+        var y1 = !hasS ? rowY(rows-1) + OUT
+               : !outerCol ? rowY(r+1) - setback(map, false, r+1, -1) : rowY(r+1);
+        /* the ring's own houses face the street that runs along the map edge */
+        if (outerRow && !outerCol){
+          if (!hasN) y1 = rowY(0) - setback(map, false, 0, -1);
+          if (!hasS) y0 = rowY(rows-1) + setback(map, false, rows-1, 1);
+        }
+        if (outerCol && !outerRow){
+          if (!hasW) x1 = colX(0) - setback(map, true, 0, -1);
+          if (!hasE) x0 = colX(cols-1) + setback(map, true, cols-1, 1);
+        }
+        var main = {
+          N: hasN && r === map.priRow, S: hasS && r + 1 === map.priRow,
+          W: hasW && c === map.priCol, E: hasE && c + 1 === map.priCol
+        };
+        /* houses face a side only where a street actually runs along it */
+        var fronts = {
+          N: outerRow ? !hasS : hasN, S: outerRow ? !hasN : hasS,
+          W: outerCol ? !hasE : hasW, E: outerCol ? !hasW : hasE
+        };
+        if (outerRow && outerCol) fronts = { N:false, S:false, W:false, E:false };
+        if (outerRow && !outerCol){ fronts.W = false; fronts.E = false; }
+        if (outerCol && !outerRow){ fronts.N = false; fronts.S = false; }
+        addBlock(blocks, rand, x0, y0, x1, y1, fronts, main);
+      }
+    }
+
+    /* trees and lamps on the pavements, every so often, never in a junction */
+    function alongStreet(isCol, i){
+      var line = isCol ? colX(i) : rowY(i);
+      var n = isCol ? rows : cols;
+      var from = (isCol ? rowY(0) : colX(0)), to = (isCol ? rowY(rows-1) : colX(cols-1));
+      var main = isCol ? i === map.priCol : i === map.priRow;
+      var step = main ? 150 : 210;
+      for (var t = from + 170; t < to - 120; t += step){
+        var k = ((t - from) % S + S) % S;
+        if (k < 190 || k > S - 190) continue;           // keep the junctions clear
+        [-1, 1].forEach(function(side){
+          var off = setback(map, isCol, i, side) - WALK*0.35;
+          if (isCol && i === map.railCol && side > 0) off = City.RAIL.bed[1] + 6 + WALK*0.35;
+          var px = isCol ? line + side*off : t, py = isCol ? t : line + side*off;
+          if (rand() < (main ? 0.9 : 0.55)) trees.push({ x:px, y:py, h:(7 + rand()*5)*M, r:(2.2 + rand()*1.4)*M, tone:rand() });
+        });
+        if (Math.round((t - from)/step) % 2 === 0){
+          var lo = KERB + 6;
+          lamps.push({ x:isCol ? line - lo : t + 40, y:isCol ? t + 40 : line - lo });
+        }
+      }
+      void n;
+    }
+    for (c = 0; c < cols; c++) alongStreet(true, c);
+    for (r = 0; r < rows; r++) alongStreet(false, r);
+
+    var houses = [];
+    blocks.forEach(function(b){ houses = houses.concat(b.houses); });
+    map._view = { blocks:blocks, houses:houses, trees:trees, lamps:lamps,
+                  colX:colX, rowY:rowY };
+    return map._view;
+  }
+
+  /* the U-Bahn's bed, as a rectangle along the main road */
+  function railBed(map){
+    if (map.railCol < 0) return null;
+    var v = build(map), x = v.colX(map.railCol), S = City.SPACING;
+    var run = City.ENTRY + City.LINK + 400;
+    return { x0:x + City.RAIL.bed[0], x1:x + City.RAIL.bed[1],
+             y0:v.rowY(0) - run, y1:v.rowY(map.rows-1) + run,
+             tracks:[x + City.RAIL.track.S, x + City.RAIL.track.N], S:S };
+  }
+
+  return { build:build, railBed:railBed, KERB:KERB, WALK:WALK, rng:rng };
+})();
+
 /* ---------- js/render.js ---------- */
 'use strict';
 /* ------------------------------------------------------------------
@@ -4130,9 +4547,80 @@ var Render = (function(){
     return scale;
   }
 
+  /* ---------- the town, seen from above ---------- */
+  /* Everything here is in real map coordinates. The single-junction
+     drawing below works as if its junction sat at the origin, so the
+     frame translates onto each junction before calling it. */
+  function drawCity(ctx, world){
+    var map = world.map, view = CityView.build(map);
+    var night = isNight();
+    ctx.fillStyle = night ? '#34322d' : '#b9b3a6';
+    var b0 = view.colX(-2), b1 = view.colX(map.cols + 1), c0 = view.rowY(-2), c1 = view.rowY(map.rows + 1);
+    ctx.fillRect(b0, c0, b1 - b0, c1 - c0);
+    ctx.fillStyle = night ? '#1f271b' : '#7d9a5f';
+    view.blocks.forEach(function(b){ ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); });
+
+    var bed = CityView.railBed(map);
+    if (bed){
+      ctx.fillStyle = night ? '#35302a' : '#8a8173';
+      ctx.fillRect(bed.x0, bed.y0, bed.x1 - bed.x0, bed.y1 - bed.y0);
+    }
+    var reach = City.SPACING/2 + 2;
+    map.nodes.forEach(function(n){
+      ctx.save(); ctx.translate(n.x, n.y);
+      drawJunctionGround(ctx, n, reach);
+      ctx.restore();
+    });
+    if (bed){
+      ctx.strokeStyle = COL.rail; ctx.lineWidth = 2.5;
+      bed.tracks.forEach(function(tx){
+        [-9, 9].forEach(function(o){
+          ctx.beginPath(); ctx.moveTo(tx + o, bed.y0); ctx.lineTo(tx + o, bed.y1); ctx.stroke();
+        });
+      });
+    }
+    map.nodes.forEach(function(n){
+      ctx.save(); ctx.translate(n.x, n.y);
+      drawJunctionMarkings(ctx, n, reach);
+      ctx.restore();
+    });
+  }
+  /* rooftops and tree crowns go over the ground, under the traffic */
+  function drawCityTops(ctx, world){
+    var view = CityView.build(world.map), night = isNight();
+    view.houses.forEach(function(h){
+      ctx.fillStyle = COL.shadow;
+      ctx.fillRect(h.x0 + 10, h.y0 + 12, h.x1 - h.x0, h.y1 - h.y0);
+      ctx.fillStyle = h.roof || h.color;
+      if (night) ctx.globalAlpha = 0.75;
+      ctx.fillRect(h.x0, h.y0, h.x1 - h.x0, h.y1 - h.y0);
+      ctx.globalAlpha = 1;
+      /* the ridge line of a pitched roof */
+      if (h.roof){
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (h.front === 'N' || h.front === 'S'){
+          var ym = (h.y0 + h.y1)/2; ctx.moveTo(h.x0, ym); ctx.lineTo(h.x1, ym);
+        } else {
+          var xm = (h.x0 + h.x1)/2; ctx.moveTo(xm, h.y0); ctx.lineTo(xm, h.y1);
+        }
+        ctx.stroke();
+      }
+    });
+    view.trees.forEach(function(t){
+      ctx.fillStyle = night ? 'rgba(36,54,31,0.9)' : 'rgba(86,122,69,0.92)';
+      ctx.beginPath(); ctx.arc(t.x, t.y, t.r*0.9, 0, Math.PI*2); ctx.fill();
+    });
+  }
+  function isNight(){
+    var h = (COL.road || '').replace('#','');
+    var n = parseInt(h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h, 16);
+    return isNaN(n) ? true : ((n>>16)&255) < 90;
+  }
+
   /* ---------- ground ---------- */
   function drawGround(ctx, world){
-    var sc = world.junctionFor(world.player), L = sc.layout, i;
+    var sc = world.junctionFor(world.player), i;
     ctx.fillStyle = COL.grass;
     ctx.fillRect(-CFG.FAR*1.4, -CFG.FAR*1.4, CFG.FAR*2.8, CFG.FAR*2.8);
 
@@ -4142,7 +4630,10 @@ var Render = (function(){
       if ((i+j)%2) continue;
       ctx.fillRect(i*130-60, j*130-60, 66, 66);
     }
-
+    drawJunctionGround(ctx, sc, CFG.FAR);
+  }
+  function drawJunctionGround(ctx, sc, reach){
+    var L = sc.layout;
     var ring = L.type === 'roundabout';
     var inner = ring ? CFG.RING + CFG.BOX : 0;
 
@@ -4151,9 +4642,9 @@ var Render = (function(){
       ctx.save();
       ctx.rotate(armAngle(arm));
       ctx.fillStyle = COL.kerb;
-      ctx.fillRect(inner ? inner-6 : 0, -CFG.BOX-7, CFG.FAR, CFG.BOX*2+14);
+      ctx.fillRect(inner ? inner-6 : 0, -CFG.BOX-7, reach, CFG.BOX*2+14);
       ctx.fillStyle = COL.road;
-      ctx.fillRect(inner ? inner-6 : 0, -CFG.BOX, CFG.FAR, CFG.BOX*2);
+      ctx.fillRect(inner ? inner-6 : 0, -CFG.BOX, reach, CFG.BOX*2);
       ctx.restore();
     });
 
@@ -4214,7 +4705,10 @@ var Render = (function(){
 
   /* ---------- road markings ---------- */
   function drawMarkings(ctx, world){
-    var sc = world.junctionFor(world.player), L = sc.layout;
+    drawJunctionMarkings(ctx, world.junctionFor(world.player), CFG.FAR);
+  }
+  function drawJunctionMarkings(ctx, sc, reach){
+    var L = sc.layout;
     var ring = L.type === 'roundabout';
     var inner = ring ? CFG.RING + CFG.BOX : CFG.BOX;
 
@@ -4226,16 +4720,20 @@ var Render = (function(){
       ctx.strokeStyle = COL.paintDim; ctx.lineWidth = 4;
       ctx.setLineDash([26, 22]);
       ctx.beginPath();
-      ctx.moveTo(inner + 14, 0); ctx.lineTo(CFG.FAR, 0);
+      ctx.moveTo(inner + 14, 0); ctx.lineTo(reach, 0);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      /* give-way / stop line on the approach half (local y in [-BOX,0]) */
+      /* give-way / stop line on the approach half (local y in [-BOX,0]);
+         in town it sits where a car's front really stops, and beside
+         the U-Bahn in front of the tracks */
       var sign  = Rules.signOf(sc, arm);
       var lit   = sc.lights && sc.lights.groups[arm];
-      var lineX = ring ? CFG.RING + CFG.BOX + 8 : CFG.BOX + 8;
+      var lineX = ring ? CFG.RING + CFG.BOX + 8
+                : (sc.rail && arm === sc.rail.side) ? sc.rail.carHold - 2
+                : sc.x !== undefined ? CFG.BOX + 30 : CFG.BOX + 8;
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Sim.CROSS_MID + Sim.CROSS_HALF + 12;
+      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
 
       if (lit || sign === 'stop'){
         ctx.fillStyle = COL.paint;
@@ -4375,8 +4873,10 @@ var Render = (function(){
       var st = Rules.lightFor(sc, arm, world.t);
       if (!st) return;
       var o = Geo.ARM_VEC[arm], r = Geo.rot90cw(o);
-      var x = o.x*(CFG.BOX+30) + r.x*(-(CFG.BOX+30));
-      var y = o.y*(CFG.BOX+30) + r.y*(-(CFG.BOX+30));
+      /* beside the U-Bahn the signal stands before the tracks */
+      var d = (sc.rail && arm === sc.rail.side) ? sc.rail.carHold + 8 : CFG.BOX + 30;
+      var x = o.x*d + r.x*(-(CFG.BOX+30));
+      var y = o.y*d + r.y*(-(CFG.BOX+30));
       ctx.save();
       ctx.translate(x, y);
       ctx.fillStyle = '#15181c';
@@ -4496,13 +4996,23 @@ var Render = (function(){
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,w,h);
     var scale = camera(ctx, w, h, world, preview);
-    drawGround(ctx, world);
-    drawMarkings(ctx, world);
+    /* the junction's own drawing is built around the origin: move onto
+       wherever it really is (a lesson's is at the origin anyway) */
+    var j = world.junctionFor(world.player);
+    if (world.map) drawCity(ctx, world);
+    ctx.save(); ctx.translate(j.x || 0, j.y || 0);
+    if (!world.map){ drawGround(ctx, world); drawMarkings(ctx, world); }
+    ctx.restore();
+    if (world.map) drawCityTops(ctx, world);
     drawRoute(ctx, world);
+    ctx.save(); ctx.translate(j.x || 0, j.y || 0);
     drawSigns(ctx, world, scale);
     drawPeds(ctx, world);
+    ctx.restore();
     world.vehicles.forEach(function(v){ if (!v.done) drawVehicle(ctx, v, world.t); });
+    ctx.save(); ctx.translate(j.x || 0, j.y || 0);
     drawLights(ctx, world);
+    ctx.restore();
 
     if (world.crashPoint){
       var c = world.crashPoint, r = 26 + Math.sin(world.endTimer*9)*6;
@@ -4522,8 +5032,13 @@ var Render = (function(){
 
    A pinhole camera sitting where the driver's eyes are, projecting the
    same world the top-down view draws. Ground geometry is painted first
-   (road, markings, crossings), then everything that stands up off the
-   road is depth-sorted and drawn far to near.
+   (road, pavements, track bed, markings), then everything that stands
+   up - houses, trees, lamps, signs, lights, vehicles - is depth-sorted
+   and drawn far to near.
+
+   A lesson is one junction in open country. The open world is a whole
+   town: every junction near you, the houses along every block, the
+   U-Bahn beside the main road. Its layout comes from cityview.js.
 
    Camera space is (f, r, z): f forward, r to the right, z world height.
    ------------------------------------------------------------------ */
@@ -4535,13 +5050,15 @@ var POV = (function(){
   var NEAR    = 0.75 * M;          // near clip plane
   var FAR_CUT = 130  * M;          // draw distance
   var FOV     = 78 * Math.PI/180;  // horizontal field of view
+  var DETAIL  = 70 * M;            // windows and sleepers only this close
 
   var COL = {
     sky1:'#1b2740', sky2:'#3d4a63', haze:'#3d4a63',
     grass:'#23291f', road:'#2f2e2b', kerb:'#4c4941',
     paint:'#e9e5d9', paintDim:'#a8a499', island:'#2b3624',
     glass:'#161b21', interior:'#191713', dash:'#221f1a',
-    route:'rgba(107,178,245,0.45)'
+    route:'rgba(107,178,245,0.45)',
+    pave:'#3a3833', yard:'#26301f', bed:'#3b3630', rail:'#8d8a82'
   };
   var VARS = {
     grass:'--grass', road:'--road', kerb:'--kerb', paint:'--paint',
@@ -4549,6 +5066,14 @@ var POV = (function(){
     sky1:'--sky-1', sky2:'--sky-2', haze:'--sky-2',
     interior:'--cabin', dash:'--cabin-dark'
   };
+  var night = true;
+  function luminance(hex){
+    var h = (hex || '').replace('#','');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var n = parseInt(h, 16);
+    if (isNaN(n)) return 0;
+    return (0.2126*((n>>16)&255) + 0.7152*((n>>8)&255) + 0.0722*(n&255)) / 255;
+  }
   function syncTheme(){
     if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return;
     var cs = getComputedStyle(document.documentElement);
@@ -4561,6 +5086,13 @@ var POV = (function(){
       var n = parseInt(info.slice(1), 16);
       COL.route = 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+',0.45)';
     }
+    night = luminance(COL.sky1) < 0.3;
+    /* the town's own surfaces follow day and night */
+    COL.pave = night ? '#34322d' : '#b9b3a6';
+    COL.yard = night ? '#1f271b' : '#7d9a5f';
+    COL.bed  = night ? '#35302a' : '#8a8173';
+    COL.rail = night ? '#8d8a82' : '#6c6a66';
+    sprites = {};                                  // trees and lamps repaint too
   }
 
   /* ---------- colour helpers ---------- */
@@ -4574,6 +5106,13 @@ var POV = (function(){
     var b = Math.min(255, Math.round((n&255)*k));
     return 'rgb('+r+','+g+','+b+')';
   }
+  /* houses and cars are darker at night, but never black */
+  function lit(hex, k){ return shade(hex, night ? k*0.42 : k); }
+  function hash(a, b, c){
+    var x = (a*73856093) ^ (b*19349663) ^ (c*83492791);
+    x = (x ^ (x >>> 13)) * 1274126177;
+    return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+  }
 
   /* ---------- camera ---------- */
   function makeCam(world, yaw, w, h){
@@ -4584,7 +5123,7 @@ var POV = (function(){
     var ey = p.pos.y + s*(p.len*0.10) + ( c)*(-p.wid*0.20);
     var hh = p.pos.h + yaw;
     return {
-      ex:ex, ey:ey,
+      ex:ex, ey:ey, heading:hh,
       fx:Math.cos(hh), fy:Math.sin(hh),
       rx:-Math.sin(hh), ry:Math.cos(hh),
       F:(w/2)/Math.tan(FOV/2),
@@ -4618,20 +5157,28 @@ var POV = (function(){
     }
     return out;
   }
-  /* pts: array of [x, y, z] in world space */
-  function fillPoly(ctx, cam, pts, color){
+  /* add one polygon (world [x,y,z] points) to the current path */
+  function tracePoly(ctx, cam, pts){
     var cs = [], i;
     for (i = 0; i < pts.length; i++) cs.push(toCam(cam, pts[i][0], pts[i][1], pts[i][2]));
     cs = clipNear(cs, cam.near);
-    if (cs.length < 3) return;
-    ctx.fillStyle = color;
-    ctx.beginPath();
+    if (cs.length < 3) return false;
     for (i = 0; i < cs.length; i++){
       var s = proj(cam, cs[i]);
       if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y);
     }
     ctx.closePath();
+    return true;
+  }
+  function fillPoly(ctx, cam, pts, color){
+    ctx.beginPath();
+    if (!tracePoly(ctx, cam, pts)) return;
+    ctx.fillStyle = color;
     ctx.fill();
+  }
+  function rect(x0, y0, x1, y1, z){
+    z = z || 0;
+    return [[x0,y0,z],[x1,y0,z],[x1,y1,z],[x0,y1,z]];
   }
 
   /* a flat quad on the road, given in arm-local coordinates
@@ -4703,15 +5250,117 @@ var POV = (function(){
       });
     });
   }
+  /* a street tree: trunk and a loose, layered crown */
+  function treeSprite(tone){
+    var k = tone < 0.33 ? 0 : tone < 0.66 ? 1 : 2;
+    return sprite('tree' + k + (night ? 'n' : 'd'), 128, 192, function(g, w, h){
+      var greens = night ? [['#1c2a1a','#24361f','#2c4126'], ['#1a2718','#22331d','#2a3d24'], ['#202c19','#2a3a20','#334727']][k]
+                         : [['#4f6e3a','#5f8246','#739a55'], ['#46663a','#567a45','#6a9152'], ['#5a7236','#6c8a41','#84a44f']][k];
+      g.fillStyle = night ? '#2a231c' : '#5b4634';
+      g.fillRect(w*0.46, h*0.50, w*0.08, h*0.50);
+      var blobs = [[0.50,0.34,0.36],[0.32,0.42,0.24],[0.68,0.42,0.24],[0.42,0.22,0.22],[0.60,0.24,0.22],[0.50,0.50,0.22]];
+      for (var layer = 0; layer < 3; layer++){
+        g.fillStyle = greens[layer];
+        blobs.forEach(function(b, i){
+          var dx = (layer - 1) * 0.03 * (i % 2 ? 1 : -1), dy = -layer*0.02;
+          g.beginPath();
+          g.arc(w*(b[0]+dx), h*(b[1]+dy), w*b[2]*(1 - layer*0.22), 0, Math.PI*2);
+          g.fill();
+        });
+      }
+    });
+  }
+  function lampSprite(){
+    return sprite('lamp' + (night ? 'n' : 'd'), 40, 200, function(g, w, h){
+      g.fillStyle = night ? '#3a3d42' : '#5d6269';
+      g.fillRect(w*0.46, h*0.06, w*0.08, h*0.94);
+      g.fillRect(w*0.20, h*0.04, w*0.60, h*0.04);
+      g.fillStyle = night ? '#ffe7a8' : '#d9dcdf';
+      g.fillRect(w*0.14, h*0.075, w*0.34, h*0.02);
+    });
+  }
+  /* the blue U-Bahn sign with the stop's name under it */
+  function stationSprite(name){
+    return sprite('stn' + name, 220, 300, function(g, w, h){
+      g.fillStyle = '#5d6269';
+      g.fillRect(w*0.47, h*0.30, w*0.06, h*0.70);
+      g.fillStyle = '#1b4f9c';
+      g.fillRect(w*0.30, 0, w*0.40, w*0.40);
+      g.fillStyle = '#fff';
+      g.font = 'bold ' + Math.round(w*0.32) + 'px Archivo, Arial, sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('U', w*0.5, w*0.21);
+      g.fillStyle = '#f4f4f0';
+      g.fillRect(0, h*0.32, w, h*0.13);
+      g.fillStyle = '#1b1b1b';
+      g.font = 'bold ' + Math.round(h*0.075) + 'px Archivo, Arial, sans-serif';
+      g.fillText(name, w*0.5, h*0.385, w*0.96);
+    });
+  }
 
-  /* ---------- ground ---------- */
-  function drawWorldGround(ctx, cam, world){
-    /* Everything here is built as if the current junction sat at the
-       world origin - true for a lesson, not for the open world, where
-       junctions sit at their own real map coordinates. ox/oy carries
-       that real position through, and is zero for a lesson (its
-       junction has no x/y), so nothing changes there. */
-    var sc = world.junctionFor(world.player), L = sc.layout;
+  /* ---------- sky, and Frankfurt on the horizon ---------- */
+  /* A band of distant roofs all the way round, and to the south - where
+     it really is from Eschersheim - the banking towers of the city. */
+  var TOWERS = [
+    { a:-0.16, w:0.030, h:0.23, top:'flat' },   // Commerzbank
+    { a:-0.10, w:0.024, h:0.18, top:'flat' },
+    { a:-0.07, w:0.022, h:0.20, top:'spike' },  // Main Tower
+    { a:-0.02, w:0.026, h:0.16, top:'flat' },
+    { a: 0.04, w:0.028, h:0.21, top:'pyramid' },// Messeturm
+    { a: 0.10, w:0.020, h:0.13, top:'flat' }
+  ];
+  function drawHorizon(ctx, cam, world){
+    var w = cam.w, H = cam.h, hy = cam.hy, i;
+    var base = night ? '#141a26' : '#9aa6b3';
+    ctx.fillStyle = base;
+    ctx.beginPath();
+    ctx.moveTo(0, hy);
+    for (i = -60; i <= 60; i++){
+      var a = cam.heading + i*0.02;
+      var k = Math.floor((a / (Math.PI*2) * 314) % 314 + 314) % 314;
+      var hh = (6 + hash(k, 3, 7)*16 + (hash(k, 5, 1) > 0.9 ? 12 : 0)) * H/700;
+      var x = cam.cx + cam.F*Math.tan(i*0.02);
+      if (Math.abs(i*0.02) > FOV*0.62) continue;
+      ctx.lineTo(x, hy - hh); ctx.lineTo(x + cam.F*0.021, hy - hh);
+    }
+    ctx.lineTo(w, hy); ctx.closePath(); ctx.fill();
+    if (!world.map) return;
+    /* the skyline sits due south (heading +y) */
+    TOWERS.forEach(function(t){
+      var d = Math.atan2(Math.sin(Math.PI/2 + t.a - cam.heading), Math.cos(Math.PI/2 + t.a - cam.heading));
+      if (Math.abs(d) > FOV*0.6) return;
+      var x = cam.cx + cam.F*Math.tan(d), tw = cam.F*t.w, th = H*t.h*0.55;
+      ctx.fillStyle = night ? '#1a2233' : '#8795a6';
+      ctx.fillRect(x - tw/2, hy - th, tw, th);
+      if (t.top === 'pyramid'){
+        ctx.beginPath(); ctx.moveTo(x - tw/2, hy - th); ctx.lineTo(x, hy - th - tw*0.9); ctx.lineTo(x + tw/2, hy - th); ctx.fill();
+      } else if (t.top === 'spike'){
+        ctx.fillRect(x - 1, hy - th - tw*1.4, 2, tw*1.4);
+      }
+      if (night){
+        ctx.fillStyle = 'rgba(255,214,140,0.55)';
+        for (var j = 0; j < 14; j++)
+          if (hash(Math.round(t.a*100), j, 9) > 0.45)
+            ctx.fillRect(x - tw/2 + tw*hash(j, 2, Math.round(t.a*100)), hy - th*hash(j, 7, 3), 1.5, 1.5);
+        ctx.fillStyle = '#ff3b30';
+        ctx.fillRect(x - 1, hy - th - (t.top === 'spike' ? tw*1.4 : 0) - 2, 2, 2);
+      }
+    });
+  }
+
+  /* ---------- where the stop line is painted ---------- */
+  /* In town the line sits where a car's front actually stops - further
+     out beside the U-Bahn, so nobody waits on the tracks. */
+  function stopLineX(sc, arm, ring){
+    if (ring) return CFG.RING + CFG.BOX + 8;
+    if (sc.rail && arm === sc.rail.side) return sc.rail.carHold - 2;
+    if (sc.x !== undefined) return CFG.BOX + 30;
+    return CFG.BOX + 8;
+  }
+
+  /* ---------- ground: one junction ---------- */
+  function drawJunctionGround(ctx, cam, sc, reach, city){
+    var L = sc.layout;
     var ox = sc.x || 0, oy = sc.y || 0;
     var ring = L.type === 'roundabout';
     var inner = ring ? CFG.RING + CFG.BOX : 0;
@@ -4720,8 +5369,8 @@ var POV = (function(){
     /* carriageways + kerbs */
     L.arms.forEach(function(arm){
       var from = inner ? inner - 6 : -CFG.BOX;
-      armQuad(ctx, cam, arm, from, -CFG.BOX-7, FAR_CUT, CFG.BOX+7, COL.kerb, ox, oy);
-      armQuad(ctx, cam, arm, from, -CFG.BOX,   FAR_CUT, CFG.BOX,   COL.road, ox, oy);
+      armQuad(ctx, cam, arm, from, -CFG.BOX-7, reach, CFG.BOX+7, COL.kerb, ox, oy);
+      armQuad(ctx, cam, arm, from, -CFG.BOX,   reach, CFG.BOX,   COL.road, ox, oy);
     });
 
     if (ring){
@@ -4744,22 +5393,31 @@ var POV = (function(){
         island.push([Math.cos(i/N*Math.PI*2)*R0+ox, Math.sin(i/N*Math.PI*2)*R0+oy, 0]);
       fillPoly(ctx, cam, island, COL.island);
     } else {
-      fillPoly(ctx, cam, [
-        [-CFG.BOX+ox,-CFG.BOX+oy,0], [CFG.BOX+ox,-CFG.BOX+oy,0],
-        [ CFG.BOX+ox, CFG.BOX+oy,0], [-CFG.BOX+ox, CFG.BOX+oy,0]], COL.road);
+      /* a town junction's corners are kerbed round, not left square */
+      var bx = city ? CFG.BOX + 7 : CFG.BOX;
+      fillPoly(ctx, cam, rect(-bx+ox, -bx+oy, bx+ox, bx+oy), city ? COL.kerb : COL.road);
+      if (city) fillPoly(ctx, cam, rect(-CFG.BOX+ox, -CFG.BOX+oy, CFG.BOX+ox, CFG.BOX+oy), COL.road);
+      /* the side arms' kerbs run across the mouth of every other arm:
+         put the asphalt back where the arms meet the box */
+      L.arms.forEach(function(arm){
+        armQuad(ctx, cam, arm, -CFG.BOX, -CFG.BOX, CFG.BOX + 10, CFG.BOX, COL.road, ox, oy);
+      });
     }
+  }
 
-    /* markings */
+  function drawJunctionMarkings(ctx, cam, sc, reach){
+    var L = sc.layout, ox = sc.x || 0, oy = sc.y || 0;
+    var ring = L.type === 'roundabout';
     L.arms.forEach(function(arm){
       var start = (ring ? CFG.RING + CFG.BOX : CFG.BOX) + 14;
-      for (var d = start; d < FAR_CUT; d += 48)
+      for (var d = start; d < reach - 20; d += 48)
         armQuad(ctx, cam, arm, d, -2, d + 26, 2, COL.paintDim, ox, oy);
 
       var sign = Rules.signOf(sc, arm);
       var lit  = sc.lights && sc.lights.groups[arm];
-      var lineX = ring ? CFG.RING + CFG.BOX + 8 : CFG.BOX + 8;
+      var lineX = stopLineX(sc, arm, ring);
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Sim.CROSS_MID + Sim.CROSS_HALF + 12;
+      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
 
       if (lit || sign === 'stop'){
         armQuad(ctx, cam, arm, lineX, -CFG.BOX, lineX + 7, 0, COL.paint, ox, oy);
@@ -4773,6 +5431,80 @@ var POV = (function(){
                                  Sim.CROSS_MID + Sim.CROSS_HALF, yy + 10, COL.paint, ox, oy);
       }
     });
+  }
+
+  /* ---------- ground: the whole town ---------- */
+  function nearNodes(world, cam, range){
+    var out = [], nodes = world.map.nodes;
+    for (var i = 0; i < nodes.length; i++){
+      var n = nodes[i];
+      var c = toCam(cam, n.x, n.y, 0);
+      if (Math.hypot(c.f, c.r) > range) continue;
+      if (c.f < -City.SPACING*0.6) continue;
+      out.push(n);
+    }
+    return out;
+  }
+  function boxVisible(cam, x0, y0, x1, y1, pad){
+    var pts = [[x0,y0],[x1,y0],[x1,y1],[x0,y1]], ahead = false, left = 0, right = 0, i;
+    var t = Math.tan(FOV/2) * 1.1;
+    for (i = 0; i < 4; i++){
+      var c = toCam(cam, pts[i][0], pts[i][1], 0);
+      if (c.f > cam.near) ahead = true;
+      if (c.f > FAR_CUT + (pad || 0)) continue;
+      if (c.r < -Math.max(c.f, 1)*t) left++;
+      if (c.r >  Math.max(c.f, 1)*t) right++;
+    }
+    if (!ahead) return false;
+    if (left === 4 || right === 4) return false;
+    /* too far away altogether */
+    var cx = Geo.clamp(cam.ex, x0, x1), cy = Geo.clamp(cam.ey, y0, y1);
+    return Math.hypot(cx - cam.ex, cy - cam.ey) < FAR_CUT;
+  }
+  function drawCityGround(ctx, cam, world){
+    var map = world.map, view = CityView.build(map), i;
+    var reach = City.SPACING/2 + 2;
+
+    /* courtyards and gardens: whatever the houses leave open */
+    view.blocks.forEach(function(b){
+      if (!boxVisible(cam, b.x0, b.y0, b.x1, b.y1)) return;
+      fillPoly(ctx, cam, rect(b.x0, b.y0, b.x1, b.y1), COL.yard);
+    });
+
+    /* the U-Bahn's bed, under the roads that cross it */
+    var bed = CityView.railBed(map);
+    if (bed) fillPoly(ctx, cam, rect(bed.x0, bed.y0, bed.x1, bed.y1), COL.bed);
+
+    var nodes = nearNodes(world, cam, FAR_CUT + City.SPACING);
+    nodes.forEach(function(n){ drawJunctionGround(ctx, cam, n, reach, true); });
+
+    /* rails: over the bed and across the roads, sleepers only up close */
+    if (bed){
+      var y0 = Math.max(bed.y0, cam.ey - FAR_CUT), y1 = Math.min(bed.y1, cam.ey + FAR_CUT);
+      bed.tracks.forEach(function(tx){
+        if (Math.abs(tx - cam.ex) < FAR_CUT){
+          var sy0 = Math.max(y0, cam.ey - DETAIL*0.5), sy1 = Math.min(y1, cam.ey + DETAIL*0.5);
+          ctx.beginPath();
+          for (var sy = Math.ceil(sy0/9)*9; sy < sy1; sy += 9)
+            tracePoly(ctx, cam, rect(tx - 13, sy, tx + 13, sy + 3.5, 0.2));
+          ctx.fillStyle = night ? '#2a2521' : '#6e6255'; ctx.fill();
+          fillPoly(ctx, cam, rect(tx - 9.5, y0, tx - 8, y1, 0.4), COL.rail);
+          fillPoly(ctx, cam, rect(tx + 8, y0, tx + 9.5, y1, 0.4), COL.rail);
+        }
+      });
+    }
+    nodes.forEach(function(n){ drawJunctionMarkings(ctx, cam, n, reach); });
+    void i;
+  }
+
+  /* ---------- ground: a lesson's single junction ---------- */
+  function drawWorldGround(ctx, cam, world){
+    if (world.map) drawCityGround(ctx, cam, world);
+    else {
+      var sc = world.junctionFor(world.player);
+      drawJunctionGround(ctx, cam, sc, FAR_CUT, false);
+      drawJunctionMarkings(ctx, cam, sc, FAR_CUT);
+    }
 
     /* the route we are supposed to take, as chevrons on the road */
     var p = world.player;
@@ -4784,94 +5516,245 @@ var POV = (function(){
     }
   }
 
-  /* ---------- vehicles as boxes ---------- */
-  function boxFaces(v, z0, z1, shrink){
-    var c = Math.cos(v.pos.h), s = Math.sin(v.pos.h);
-    var hl = v.len/2 * (shrink || 1), hw = v.wid/2 * (shrink ? 0.94 : 1);
-    function P(fwd, lat, z){
-      return [v.pos.x + c*fwd - s*lat, v.pos.y + s*fwd + c*lat, z];
+  /* ---------- solids: prisms with a top smaller than the bottom ---------- */
+  /* bottom and top are 4 world [x,y] corners each, in the same order
+     around; faces turned away from the eye are skipped. Lit from the
+     south-west, as the sun would be in the afternoon. */
+  var SUN = (function(){ var l = Math.hypot(-0.5, 0.45, 0.75); return [-0.5/l, 0.45/l, 0.75/l]; })();
+  function drawPrism(ctx, cam, bottom, z0, top, z1, color, onlyTop){
+    var B = bottom.map(function(p){ return [p[0], p[1], z0]; });
+    var T = top.map(function(p){ return [p[0], p[1], z1]; });
+    var cx = 0, cy = 0, i;
+    for (i = 0; i < 4; i++){ cx += B[i][0] + T[i][0]; cy += B[i][1] + T[i][1]; }
+    cx /= 8; cy /= 8;
+    var cz = (z0 + z1)/2;
+    var faces = [T];
+    if (!onlyTop) for (i = 0; i < 4; i++){
+      var j = (i+1) % 4;
+      faces.push([B[i], B[j], T[j], T[i]]);
     }
-    return [
-      { pts:[P(hl,-hw,z0), P(hl,hw,z0), P(hl,hw,z1), P(hl,-hw,z1)],      n:[ c, s, 0], k:0.94 },
-      { pts:[P(-hl,hw,z0), P(-hl,-hw,z0), P(-hl,-hw,z1), P(-hl,hw,z1)],  n:[-c,-s, 0], k:0.74 },
-      { pts:[P(-hl,-hw,z0), P(hl,-hw,z0), P(hl,-hw,z1), P(-hl,-hw,z1)],  n:[ s,-c, 0], k:0.64 },
-      { pts:[P(hl,hw,z0), P(-hl,hw,z0), P(-hl,hw,z1), P(hl,hw,z1)],      n:[-s, c, 0], k:0.80 },
-      { pts:[P(hl,-hw,z1), P(hl,hw,z1), P(-hl,hw,z1), P(-hl,-hw,z1)],    n:[ 0, 0, 1], k:1.10 }
-    ];
+    for (i = 0; i < faces.length; i++){
+      var f = faces[i];
+      var ax = f[1][0]-f[0][0], ay = f[1][1]-f[0][1], az = f[1][2]-f[0][2];
+      var bx = f[3][0]-f[0][0], by = f[3][1]-f[0][1], bz = f[3][2]-f[0][2];
+      var nx = ay*bz - az*by, ny = az*bx - ax*bz, nz = ax*by - ay*bx;
+      var mx = (f[0][0]+f[2][0])/2, my = (f[0][1]+f[2][1])/2, mz = (f[0][2]+f[2][2])/2;
+      if (nx*(mx-cx) + ny*(my-cy) + nz*(mz-cz) < 0){ nx = -nx; ny = -ny; nz = -nz; }
+      if (nx*(cam.ex-mx) + ny*(cam.ey-my) + nz*(cam.eh-mz) <= 0) continue;
+      var nl = Math.hypot(nx, ny, nz) || 1;
+      var k = 0.60 + 0.48*Math.max(0, (nx*SUN[0] + ny*SUN[1] + nz*SUN[2])/nl);
+      fillPoly(ctx, cam, f, lit(color, k));
+    }
   }
-  function drawBox(ctx, cam, v, z0, z1, color, shrink){
-    boxFaces(v, z0, z1, shrink).forEach(function(face){
-      /* is this face turned towards the camera? */
-      var mid = face.pts[0], i;
-      var cx = 0, cy = 0, cz = 0;
-      for (i = 0; i < face.pts.length; i++){
-        cx += face.pts[i][0]; cy += face.pts[i][1]; cz += face.pts[i][2];
-      }
-      cx /= 4; cy /= 4; cz /= 4;
-      var fc = toCam(cam, cx, cy, cz);
-      var nf = face.n[0]*cam.fx + face.n[1]*cam.fy;
-      var nr = face.n[0]*cam.rx + face.n[1]*cam.ry;
-      var nz = face.n[2];
-      if (nf*fc.f + nr*fc.r + nz*(fc.z - cam.eh) >= 0) return;   // back-facing
-      fillPoly(ctx, cam, face.pts, shade(color, face.k));
+  /* a footprint in a vehicle's own frame: fwd from..to, lat half-width */
+  function frame4(v, f0, f1, hw, lat0){
+    var c = Math.cos(v.pos.h), s = Math.sin(v.pos.h), l = lat0 || 0;
+    function P(fwd, lat){ lat += l; return [v.pos.x + c*fwd - s*lat, v.pos.y + s*fwd + c*lat]; }
+    return [P(f1, -hw), P(f1, hw), P(f0, hw), P(f0, -hw)];
+  }
+
+  /* ---------- vehicles ---------- */
+  function drawShadow(ctx, cam, v){
+    fillPoly(ctx, cam, frame4(v, -v.len*0.54, v.len*0.54, v.wid*0.58).map(function(p){ return [p[0], p[1], 0.3]; }),
+             night ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.28)');
+  }
+  function drawCar(ctx, cam, v){
+    var L = v.len, W = v.wid, hw = W/2, m = M;
+    var col = v.color;
+    /* wheels, the body over them, then the glasshouse and the roof */
+    [[-0.32, -1], [-0.32, 1], [0.33, -1], [0.33, 1]].forEach(function(wp){
+      var f = wp[0]*L, lat = wp[1]*(hw - 1.6);
+      var fp = frame4(v, f - 0.33*m, f + 0.33*m, 1.3, lat);
+      drawPrism(ctx, cam, fp, 0, fp, 0.64*m, '#151515');
     });
+    drawPrism(ctx, cam, frame4(v, -L/2, L/2, hw), 0.30*m,
+                        frame4(v, -L/2 + 1.5, L/2 - 5, hw - 0.9), 0.98*m, col);
+    drawPrism(ctx, cam, frame4(v, -L/2 + 7, L/2 - 17, hw - 1.3), 0.98*m,
+                        frame4(v, -L/2 + 11, L/2 - 24, hw - 3.4), 1.42*m, '#1b232c');
+    var roof = frame4(v, -L/2 + 11.5, L/2 - 24.5, hw - 3.6);
+    drawPrism(ctx, cam, roof, 1.42*m, roof, 1.48*m, col);
+    if (v.taxi){
+      var sign = frame4(v, -3, 3, 3.6);
+      drawPrism(ctx, cam, sign, 1.48*m, sign, 1.72*m, night ? '#ffe98a' : '#f4d03f');
+    }
   }
-  function vehicleHeights(v){
-    if (v.kind === 'tram') return { body:[0.35*M, 3.30*M], cab:null };
-    if (v.kind === 'bus')  return { body:[0.32*M, 2.85*M], cab:null };
-    return { body:[0.22*M, 1.05*M], cab:[1.05*M, 1.48*M] };
+  function drawTram(ctx, cam, v){
+    var L = v.len, hw = v.wid/2, m = M;
+    var body = frame4(v, -L/2, L/2, hw);
+    var roof = frame4(v, -L/2 + 6, L/2 - 6, hw - 1.5);
+    drawPrism(ctx, cam, body, 0.35*m, body, 2.35*m, v.color);
+    drawPrism(ctx, cam, frame4(v, -L/2 - 0.2, L/2 + 0.2, hw + 0.2), 1.25*m,
+                        frame4(v, -L/2 - 0.2, L/2 + 0.2, hw + 0.2), 2.25*m, '#1d252e');
+    drawPrism(ctx, cam, frame4(v, -L/2 - 0.3, L/2 + 0.3, hw + 0.3), 0.40*m,
+                        frame4(v, -L/2 - 0.3, L/2 + 0.3, hw + 0.3), 0.62*m, '#b8322a');
+    drawPrism(ctx, cam, body, 2.35*m, roof, 3.30*m, v.color);
+    var pan = frame4(v, -L*0.18, -L*0.06, hw - 6);
+    drawPrism(ctx, cam, pan, 3.30*m, pan, 3.55*m, '#3a3f45');
+  }
+  function drawBus(ctx, cam, v){
+    var L = v.len, hw = v.wid/2, m = M;
+    var body = frame4(v, -L/2, L/2, hw);
+    drawPrism(ctx, cam, body, 0.32*m, body, 2.85*m, v.color);
+    drawPrism(ctx, cam, frame4(v, -L/2 - 0.2, L/2 + 0.2, hw + 0.2), 1.25*m,
+                        frame4(v, -L/2 - 0.2, L/2 + 0.2, hw + 0.2), 2.45*m, '#1d252e');
+  }
+  function vehicleTop(v){
+    if (v.kind === 'tram') return 3.30*M;
+    if (v.kind === 'bus')  return 2.85*M;
+    return 0.98*M;
   }
   function drawVehicle(ctx, cam, v, t){
-    var H = vehicleHeights(v);
-    drawBox(ctx, cam, v, H.body[0], H.body[1], v.color);
-    if (H.cab) drawBox(ctx, cam, v, H.cab[0], H.cab[1], COL.glass, 0.62);
-    if (v.kind === 'tram' || v.kind === 'bus'){
-      /* a window band rather than a separate cabin box */
-      drawBox(ctx, cam, v, H.body[1]*0.52, H.body[1]*0.82, COL.glass, 0.97);
-    }
+    drawShadow(ctx, cam, v);
+    if (v.kind === 'tram') drawTram(ctx, cam, v);
+    else if (v.kind === 'bus') drawBus(ctx, cam, v);
+    else drawCar(ctx, cam, v);
 
     /* lamps: only visible from the side that has them */
     var c = Math.cos(v.pos.h), s = Math.sin(v.pos.h);
     var toCamX = cam.ex - v.pos.x, toCamY = cam.ey - v.pos.y;
     var behind = (toCamX*c + toCamY*s) < 0;
-    var lampZ = H.body[1]*0.62, hl = v.len/2, hw = v.wid/2;
-    function lamp(fwd, lat, col, size){
-      var x = v.pos.x + c*fwd - s*lat, y = v.pos.y + s*fwd + c*lat;
-      var bb = billboard(cam, x, y, lampZ - size/2, lampZ + size/2);
+    var lampZ = v.kind === 'car' || !v.kind ? 0.72*M : vehicleTop(v)*0.30, hl = v.len/2 + 0.3, hw = v.wid/2;
+    function lamp(fwd, lat, col, size, aspect, z){
+      var x = v.pos.x + c*fwd - s*lat, y = v.pos.y + s*fwd + c*lat, zz = z || lampZ;
+      var bb = billboard(cam, x, y, zz - size/2, zz + size/2);
       if (!bb || bb.h < 0.6) return;
+      var a = aspect || 1.5;
       ctx.fillStyle = col;
-      ctx.fillRect(bb.x - bb.h*0.7, bb.top, bb.h*1.4, bb.h);
+      ctx.fillRect(bb.x - bb.h*a/2, bb.top, bb.h*a, bb.h);
+      if (aspect) return;                          // a number plate does not glow
+      if (night && bb.h > 1.5){
+        ctx.globalAlpha = 0.28;
+        ctx.beginPath(); ctx.arc(bb.x, bb.top + bb.h/2, bb.h*2.2, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
     }
     var blink = (t*2.2) % 1 < 0.55;
+    var car = v.kind === 'car' || !v.kind;
+    /* the white EU number plate, front and back */
+    if (car) lamp(behind ? -hl : hl, 0, night ? '#8d8f94' : '#eeeeea', 1.3, 4.6, 0.46*M);
     if (behind){
-      var tail = v.brakeLight ? '#ff4436' : '#8f2f28';
-      lamp(-hl, -hw*0.72, tail, 3.2);
-      lamp(-hl,  hw*0.72, tail, 3.2);
-      if (blink && v.indicator === 'left')  lamp(-hl, -hw*0.95, '#ffb02e', 3.4);
-      if (blink && v.indicator === 'right') lamp(-hl,  hw*0.95, '#ffb02e', 3.4);
+      var tail = v.brakeLight ? '#ff4436' : (night ? '#c23a2e' : '#8f2f28');
+      lamp(-hl, -hw*0.74, tail, 2.2);
+      lamp(-hl,  hw*0.74, tail, 2.2);
+      if (blink && v.indicator === 'left')  lamp(-hl, -hw*0.95, '#ffb02e', 2.2);
+      if (blink && v.indicator === 'right') lamp(-hl,  hw*0.95, '#ffb02e', 2.2);
     } else {
-      lamp(hl, -hw*0.72, '#fff3d0', 3.2);
-      lamp(hl,  hw*0.72, '#fff3d0', 3.2);
-      if (blink && v.indicator === 'left')  lamp(hl, -hw*0.95, '#ffb02e', 3.4);
-      if (blink && v.indicator === 'right') lamp(hl,  hw*0.95, '#ffb02e', 3.4);
+      lamp(hl, -hw*0.70, night ? '#fff7dc' : '#e9e4d2', 2.2);
+      lamp(hl,  hw*0.70, night ? '#fff7dc' : '#e9e4d2', 2.2);
+      if (blink && v.indicator === 'left')  lamp(hl, -hw*0.95, '#ffb02e', 2.2);
+      if (blink && v.indicator === 'right') lamp(hl,  hw*0.95, '#ffb02e', 2.2);
     }
     if (v.emergency){
       var f = (t*7) % 1 < 0.5;
-      lamp(0, -hw*0.5, f ? '#5ab4ff' : '#1d4470', 4);
-      lamp(0,  hw*0.5, f ? '#1d4470' : '#5ab4ff', 4);
+      var bz = 1.55*M;
+      [[-hw*0.5, f], [hw*0.5, !f]].forEach(function(b){
+        var x = v.pos.x - s*b[0], y = v.pos.y + c*b[0];
+        var bb = billboard(cam, x, y, bz, bz + 3);
+        if (bb && bb.h > 0.6){ ctx.fillStyle = b[1] ? '#5ab4ff' : '#1d4470'; ctx.fillRect(bb.x - bb.h, bb.top, bb.h*2, bb.h); }
+      });
+    }
+  }
+
+  /* ---------- houses ---------- */
+  function drawHouse(ctx, cam, hs){
+    var x0 = hs.x0, y0 = hs.y0, x1 = hs.x1, y1 = hs.y1, h = hs.h;
+    var ex = cam.ex, ey = cam.ey;
+    /* each wall that faces us, with its outward direction for the light */
+    var walls = [];
+    if (ey < y0) walls.push({ a:[x1,y0], b:[x0,y0], n:[0,-1] });
+    if (ey > y1) walls.push({ a:[x0,y1], b:[x1,y1], n:[0, 1] });
+    if (ex < x0) walls.push({ a:[x0,y0], b:[x0,y1], n:[-1,0] });
+    if (ex > x1) walls.push({ a:[x1,y1], b:[x1,y0], n:[ 1,0] });
+    var near = Math.hypot(Geo.clamp(ex, x0, x1) - ex, Geo.clamp(ey, y0, y1) - ey);
+
+    walls.forEach(function(wl){
+      var k = 0.66 + 0.40*Math.max(0, wl.n[0]*SUN[0] + wl.n[1]*SUN[1] + 0.25);
+      fillPoly(ctx, cam, [[wl.a[0],wl.a[1],0],[wl.b[0],wl.b[1],0],[wl.b[0],wl.b[1],h],[wl.a[0],wl.a[1],h]],
+               lit(hs.color, k));
+      /* a darker plinth, then windows up close */
+      fillPoly(ctx, cam, [[wl.a[0],wl.a[1],0],[wl.b[0],wl.b[1],0],[wl.b[0],wl.b[1],0.55*M],[wl.a[0],wl.a[1],0.55*M]],
+               lit(hs.color, k*0.72));
+      if (near < DETAIL) drawWindows(ctx, cam, hs, wl);
+    });
+
+    /* the roof: pitched, ridge parallel to the street, or flat */
+    if (hs.roof){
+      var rh = hs.roofH, alongX = (hs.front === 'N' || hs.front === 'S');
+      if (alongX){
+        var ym = (y0 + y1)/2;
+        if (ey < ym) fillPoly(ctx, cam, [[x0,y0,h],[x1,y0,h],[x1,ym,h+rh],[x0,ym,h+rh]], lit(hs.roof, 0.95));
+        if (ey > ym) fillPoly(ctx, cam, [[x0,y1,h],[x1,y1,h],[x1,ym,h+rh],[x0,ym,h+rh]], lit(hs.roof, 0.80));
+        if (ex < x0) fillPoly(ctx, cam, [[x0,y0,h],[x0,y1,h],[x0,ym,h+rh]], lit(hs.color, 0.78));
+        if (ex > x1) fillPoly(ctx, cam, [[x1,y0,h],[x1,y1,h],[x1,ym,h+rh]], lit(hs.color, 0.70));
+      } else {
+        var xm = (x0 + x1)/2;
+        if (ex < xm) fillPoly(ctx, cam, [[x0,y0,h],[x0,y1,h],[xm,y1,h+rh],[xm,y0,h+rh]], lit(hs.roof, 0.92));
+        if (ex > xm) fillPoly(ctx, cam, [[x1,y0,h],[x1,y1,h],[xm,y1,h+rh],[xm,y0,h+rh]], lit(hs.roof, 0.82));
+        if (ey < y0) fillPoly(ctx, cam, [[x0,y0,h],[x1,y0,h],[xm,y0,h+rh]], lit(hs.color, 0.78));
+        if (ey > y1) fillPoly(ctx, cam, [[x0,y1,h],[x1,y1,h],[xm,y1,h+rh]], lit(hs.color, 0.72));
+      }
+    } else {
+      /* flat roof: a parapet line */
+      walls.forEach(function(wl){
+        fillPoly(ctx, cam, [[wl.a[0],wl.a[1],h-0.35*M],[wl.b[0],wl.b[1],h-0.35*M],[wl.b[0],wl.b[1],h],[wl.a[0],wl.a[1],h]],
+                 lit(hs.color, 0.6));
+      });
+    }
+  }
+  /* windows on one wall, batched into as few fills as possible */
+  function drawWindows(ctx, cam, hs, wl){
+    var ax = wl.a[0], ay = wl.a[1], dx = wl.b[0] - ax, dy = wl.b[1] - ay;
+    var len = Math.hypot(dx, dy), ux = dx/len, uy = dy/len;
+    var bay = 3.1*M, n = Math.max(1, Math.floor(len / bay)), pad = (len - n*bay)/2;
+    var out = 0.15;                             // a hair proud of the wall
+    var ox = wl.n[0]*out, oy = wl.n[1]*out;
+    function Q(u0, u1, z0, z1){
+      return [[ax + ux*u0 + ox, ay + uy*u0 + oy, z0], [ax + ux*u1 + ox, ay + uy*u1 + oy, z0],
+              [ax + ux*u1 + ox, ay + uy*u1 + oy, z1], [ax + ux*u0 + ox, ay + uy*u0 + oy, z1]];
+    }
+    var glass = night ? '#141a22' : '#3c4a58', warm = '#f3c872', frame = hs.color;
+    var dark = [], lamp = [];
+    for (var fl = 0; fl < hs.floors; fl++){
+      for (var i = 0; i < n; i++){
+        var u = pad + i*bay + bay/2;
+        var q;
+        if (fl === 0 && hs.shop){
+          q = Q(u - bay*0.42, u + bay*0.42, 0.55*M, 2.7*M);
+        } else if (fl === 0 && i === Math.floor(n/2)){
+          q = Q(u - 0.55*M, u + 0.55*M, 0.1*M, 2.25*M);        // the front door
+          (night ? lamp : dark).push({ q:q, door:true });
+          continue;
+        } else {
+          var z = fl*3.0*M + 0.95*M;
+          q = Q(u - 0.62*M, u + 0.62*M, z, z + 1.45*M);
+        }
+        var on = night && hash(hs.seed, fl*31 + i, 5) < (fl === 0 && hs.shop ? 0.8 : 0.34);
+        (on ? lamp : dark).push({ q:q });
+      }
+    }
+    ctx.beginPath();
+    dark.forEach(function(w){ if (!w.door) tracePoly(ctx, cam, w.q); });
+    ctx.fillStyle = glass; ctx.fill();
+    ctx.beginPath();
+    dark.concat(lamp).forEach(function(w){ if (w.door) tracePoly(ctx, cam, w.q); });
+    ctx.fillStyle = lit(frame, 0.45); ctx.fill();
+    if (lamp.length){
+      ctx.beginPath();
+      lamp.forEach(function(w){ if (!w.door) tracePoly(ctx, cam, w.q); });
+      ctx.fillStyle = warm; ctx.fill();
     }
   }
 
   /* ---------- standing objects, depth sorted ---------- */
+  function depthOf(cam, x, y){ return Math.hypot(x - cam.ex, y - cam.ey); }
   function collectObjects(world, cam){
-    var sc = world.junctionFor(world.player), L = sc.layout, out = [];
-    var ox = sc.x || 0, oy = sc.y || 0;
+    var out = [];
 
     world.vehicles.forEach(function(v){
       if (v.done || v.isPlayer) return;
       var c = toCam(cam, v.pos.x, v.pos.y, 0);
-      if (c.f < cam.near - v.len || c.f > FAR_CUT) return;
-      out.push({ depth:c.f, kind:'veh', v:v });
+      if (c.f < cam.near - v.len || c.f > FAR_CUT + v.len) return;
+      out.push({ depth:Math.max(0, depthOf(cam, v.pos.x, v.pos.y) - v.len*0.35), kind:'veh', v:v });
     });
 
     world.peds.forEach(function(ped){
@@ -4879,49 +5762,63 @@ var POV = (function(){
       var pt = ped.point();
       var c = toCam(cam, pt.x, pt.y, 0);
       if (c.f < cam.near || c.f > FAR_CUT) return;
-      out.push({ depth:c.f, kind:'ped', ped:ped, pt:pt });
+      out.push({ depth:depthOf(cam, pt.x, pt.y), kind:'ped', ped:ped, pt:pt });
     });
 
-    /* road signs, on their posts */
-    L.arms.forEach(function(arm){
-      var type = L.type === 'roundabout' ? 'roundabout' : Rules.signOf(sc, arm);
-      var o = Geo.ARM_VEC[arm], q = Geo.rot90cw(o);
-      var base = L.type === 'roundabout' ? CFG.RING + CFG.BOX : CFG.BOX;
-      var d = base + 46, lat = -(CFG.BOX + 26);
-      var x = o.x*d + q.x*lat + ox, y = o.y*d + q.y*lat + oy;
-
-      if (type !== 'none') push(type, x, y, 0);
-      if (L.zone && arm === sc.player.from) push(L.zone, x + o.x*74, y + o.y*74, 0);
-      if (sc.gruenpfeil && sc.gruenpfeil.indexOf(arm) >= 0) push('green_arrow', x, y, -0.55*M);
-
-      function push(t, sx, sy, dz){
-        var c = toCam(cam, sx, sy, 0);
-        if (c.f < cam.near || c.f > FAR_CUT) return;
-        out.push({ depth:c.f, kind:'sign', type:t, x:sx, y:sy, dz:dz||0 });
-      }
-    });
-    if (L.busstop){
-      var ob = Geo.ARM_VEC[L.busstop], qb = Geo.rot90cw(ob);
-      var bx = ob.x*(CFG.BOX+430) + qb.x*(-(CFG.BOX+26)) + ox;
-      var by = ob.y*(CFG.BOX+430) + qb.y*(-(CFG.BOX+26)) + oy;
-      var cb = toCam(cam, bx, by, 0);
-      if (cb.f >= cam.near && cb.f <= FAR_CUT)
-        out.push({ depth:cb.f, kind:'sign', type:'bus_stop', x:bx, y:by, dz:0 });
+    function pushAt(ob, x, y){
+      var c = toCam(cam, x, y, 0);
+      if (c.f < cam.near || c.f > FAR_CUT) return;
+      ob.depth = depthOf(cam, x, y); ob.x = x; ob.y = y;
+      out.push(ob);
     }
 
-    /* traffic lights: one before the junction, one on the far side */
-    if (sc.lights){
+    var junctions = world.map ? nearNodes(world, cam, FAR_CUT + 200) : [world.junctionFor(world.player)];
+    junctions.forEach(function(sc){
+      var L = sc.layout, ox = sc.x || 0, oy = sc.y || 0;
+      /* road signs, on their posts */
       L.arms.forEach(function(arm){
-        var st = Rules.lightFor(sc, arm, world.t);
-        if (!st) return;
+        var type = L.type === 'roundabout' ? 'roundabout' : Rules.signOf(sc, arm);
         var o = Geo.ARM_VEC[arm], q = Geo.rot90cw(o);
-        [[CFG.BOX + 26, -(CFG.BOX + 24)], [-(CFG.BOX + 30), -(CFG.BOX + 24)]].forEach(function(pos){
-          var x = o.x*pos[0] + q.x*pos[1] + ox, y = o.y*pos[0] + q.y*pos[1] + oy;
-          var c = toCam(cam, x, y, 0);
-          if (c.f < cam.near || c.f > FAR_CUT) return;
-          out.push({ depth:c.f, kind:'light', state:st, x:x, y:y });
-        });
+        var base = L.type === 'roundabout' ? CFG.RING + CFG.BOX : CFG.BOX;
+        var d = base + 46, lat = -(CFG.BOX + 26);
+        if (sc.rail && arm === sc.rail.side) d = sc.rail.carHold + 10;
+        var x = o.x*d + q.x*lat + ox, y = o.y*d + q.y*lat + oy;
+        if (type !== 'none') pushAt({ kind:'sign', type:type, dz:0 }, x, y);
+        if (L.zone && sc.player && arm === sc.player.from) pushAt({ kind:'sign', type:L.zone, dz:0 }, x + o.x*74, y + o.y*74);
+        if (sc.gruenpfeil && sc.gruenpfeil.indexOf(arm) >= 0) pushAt({ kind:'sign', type:'green_arrow', dz:-0.55*M }, x, y);
       });
+      if (L.busstop){
+        var ob = Geo.ARM_VEC[L.busstop], qb = Geo.rot90cw(ob);
+        pushAt({ kind:'sign', type:'bus_stop', dz:0 },
+               ob.x*(CFG.BOX+430) + qb.x*(-(CFG.BOX+26)) + ox, ob.y*(CFG.BOX+430) + qb.y*(-(CFG.BOX+26)) + oy);
+      }
+      /* traffic lights: one before the junction, one on the far side */
+      if (sc.lights){
+        L.arms.forEach(function(arm){
+          var st = Rules.lightFor(sc, arm, world.t);
+          if (!st) return;
+          var o = Geo.ARM_VEC[arm], q = Geo.rot90cw(o);
+          var near = CFG.BOX + 26;
+          if (sc.rail && arm === sc.rail.side) near = sc.rail.carHold + 8;
+          [[near, -(CFG.BOX + 24)], [-(CFG.BOX + 30), -(CFG.BOX + 24)]].forEach(function(pos){
+            pushAt({ kind:'light', state:st }, o.x*pos[0] + q.x*pos[1] + ox, o.y*pos[0] + q.y*pos[1] + oy);
+          });
+        });
+      }
+      /* the U-Bahn stop's sign on the corner */
+      if (sc.place && sc.rail)
+        pushAt({ kind:'station', name:sc.place }, ox + City.RAIL.bed[1] + 22, oy - CFG.BOX - 60);
+    });
+
+    if (world.map){
+      var view = CityView.build(world.map);
+      view.houses.forEach(function(hs){
+        if (!boxVisible(cam, hs.x0, hs.y0, hs.x1, hs.y1)) return;
+        var cx = Geo.clamp(cam.ex, hs.x0, hs.x1), cy = Geo.clamp(cam.ey, hs.y0, hs.y1);
+        out.push({ depth:depthOf(cam, cx, cy), kind:'house', hs:hs });
+      });
+      view.trees.forEach(function(t){ pushAt({ kind:'tree', t:t }, t.x, t.y); });
+      view.lamps.forEach(function(l){ pushAt({ kind:'lamp' }, l.x, l.y); });
     }
 
     out.sort(function(a, b){ return b.depth - a.depth; });
@@ -4959,10 +5856,11 @@ var POV = (function(){
     ctx.lineTo(w*0.555, h*0.085); ctx.lineTo(w*0.445, h*0.085);
     ctx.closePath(); ctx.fill();
 
-    /* bonnet */
+    /* bonnet, with the sky caught in its paint */
     var g = ctx.createLinearGradient(0, hood, 0, h);
-    g.addColorStop(0, shade(col, 0.72));
-    g.addColorStop(1, shade(col, 0.42));
+    g.addColorStop(0, shade(col, night ? 0.55 : 0.85));
+    g.addColorStop(0.35, shade(col, night ? 0.40 : 0.62));
+    g.addColorStop(1, shade(col, night ? 0.25 : 0.40));
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(-w*0.05, h + 2);
@@ -4988,6 +5886,23 @@ var POV = (function(){
     ctx.fillRect(0, 0, w, h);
   }
 
+  /* our own headlights on the road ahead, after dark */
+  function drawHeadlights(ctx, cam){
+    if (!night) return;
+    var w = cam.w, h = cam.h;
+    var g = ctx.createRadialGradient(w/2, h*0.80, h*0.02, w/2, h*0.66, h*0.42);
+    g.addColorStop(0, 'rgba(255,240,200,0.20)');
+    g.addColorStop(1, 'rgba(255,240,200,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(w*0.18, h); ctx.lineTo(w*0.42, cam.hy + h*0.05);
+    ctx.lineTo(w*0.58, cam.hy + h*0.05); ctx.lineTo(w*0.82, h);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
   /* ---------- main entry ---------- */
   function frame(ctx, w, h, world, yaw){
     var cam = makeCam(world, yaw || 0, w, h);
@@ -5002,12 +5917,14 @@ var POV = (function(){
     sky.addColorStop(1, COL.sky2);
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, Math.max(0, horizon));
+    drawHorizon(ctx, cam, world);
 
     /* ground */
-    ctx.fillStyle = COL.grass;
+    ctx.fillStyle = world.map ? COL.pave : COL.grass;
     ctx.fillRect(0, Math.max(0, horizon), w, h - Math.max(0, horizon));
 
     drawWorldGround(ctx, cam, world);
+    drawHeadlights(ctx, cam);
 
     /* haze along the horizon gives the distance some depth */
     var haze = ctx.createLinearGradient(0, horizon - h*0.02, 0, horizon + h*0.10);
@@ -5021,6 +5938,23 @@ var POV = (function(){
     collectObjects(world, cam).forEach(function(ob){
       if (ob.kind === 'veh'){
         drawVehicle(ctx, cam, ob.v, world.t);
+      } else if (ob.kind === 'house'){
+        drawHouse(ctx, cam, ob.hs);
+      } else if (ob.kind === 'tree'){
+        var tb = billboard(cam, ob.t.x, ob.t.y, 0, ob.t.h);
+        drawBillboard(ctx, tb, treeSprite(ob.t.tone), ob.t.r*2*1.35, ob.t.h);
+      } else if (ob.kind === 'lamp'){
+        var lb0 = billboard(cam, ob.x, ob.y, 0, 7.5*M);
+        drawBillboard(ctx, lb0, lampSprite(), 1.5*M, 7.5*M);
+        if (night && lb0 && lb0.h > 4){
+          var gl = ctx.createRadialGradient(lb0.x, lb0.top + lb0.h*0.08, 0, lb0.x, lb0.top + lb0.h*0.08, lb0.h*0.35);
+          gl.addColorStop(0, 'rgba(255,225,150,0.55)'); gl.addColorStop(1, 'rgba(255,225,150,0)');
+          ctx.fillStyle = gl;
+          ctx.fillRect(lb0.x - lb0.h*0.35, lb0.top + lb0.h*0.08 - lb0.h*0.35, lb0.h*0.7, lb0.h*0.7);
+        }
+      } else if (ob.kind === 'station'){
+        var sb = billboard(cam, ob.x, ob.y, 0, 3.4*M);
+        drawBillboard(ctx, sb, stationSprite(ob.name), 2.5*M, 3.4*M);
       } else if (ob.kind === 'ped'){
         var bb = billboard(cam, ob.pt.x, ob.pt.y, 0, (ob.ped.kid ? 1.25 : 1.74)*M);
         drawBillboard(ctx, bb, pedSprite(ob.ped.kid), 0.55, 1.74);
@@ -5082,6 +6016,19 @@ var POV = (function(){
                'mixed together.' },
     merk: { de:'Hier gibt es kein Drehbuch – lies jede Kreuzung, so wie sie kommt.',
             en:'There is no script here – read every junction as it comes.' }
+  };
+  /* the Frankfurt map: what is special about this bit of town */
+  var FRANKFURT_BRIEF = {
+    task: { de:'Du startest auf der Eschersheimer Landstraße und fährst auf den Weißen Stein zu. ' +
+                'Neben der Hauptstraße fährt die U-Bahn (U1/U2/U3/U8) auf eigenem Gleis. Alle ' +
+                'Kreuzungen der Hauptstraße haben Ampeln; die Wohnstraßen sind Tempo 30 mit rechts vor links. ' +
+                'Der Prüfer hält an, sobald du einen Fehler machst – dann kannst du zurückspulen.',
+            en:'You start on Eschersheimer Landstraße, heading south to Weißer Stein. The U-Bahn ' +
+               '(U1/U2/U3/U8) runs on its own track beside the main road. Every junction on the main ' +
+               'road has lights; the side streets are Tempo 30 with rechts vor links. The examiner ' +
+               'stops you the moment you make a mistake – then you can rewind and try again.' },
+    merk: { de:'Wer über die Gleise abbiegt, lässt die Bahn durch – auch bei Grün, auch von hinten.',
+            en:'Turning across the tracks, let the train through – even on green, even from behind.' }
   };
   var input = { throttle:false, brake:false, indicator:'off' };
   var look  = { left:false, right:false };
@@ -5287,7 +6234,7 @@ var POV = (function(){
     show('overlay-result', false);
     show('overlay-ref', false);
     show('overlay-fault', false);
-    el('btn-end-drive').classList.add('hidden');
+    el('btn-end-drive').classList.add('hidden'); el('btn-end-hud').classList.add('hidden');
     applyView();
     resize();
     updateHud();
@@ -5297,24 +6244,27 @@ var POV = (function(){
   /* ---------------- free drive ---------------- */
   function fillDriveBrief(){
     var w = state.world, titlePair = { de:w.sc.title, en:w.sc.en };
+    var B = w.map.preset ? FRANKFURT_BRIEF : DRIVE_BRIEF;
     el('brief-group').textContent   = I18N.t('drive.cta.button');
     el('brief-title').textContent   = I18N.pick(titlePair);
     el('brief-en').textContent      = I18N.other(titlePair);
-    el('brief-task').textContent    = I18N.pick(DRIVE_BRIEF.task);
-    el('brief-task-en').textContent = I18N.other(DRIVE_BRIEF.task);
-    el('brief-merk').textContent    = I18N.pick(DRIVE_BRIEF.merk);
-    el('brief-merk-sub').textContent = I18N.other(DRIVE_BRIEF.merk);
+    el('brief-task').textContent    = I18N.pick(B.task);
+    el('brief-task-en').textContent = I18N.other(B.task);
+    el('brief-merk').textContent    = I18N.pick(B.merk);
+    el('brief-merk-sub').textContent = I18N.other(B.merk);
     clear(el('brief-signs'));
 
     el('side-title').textContent = I18N.pick(titlePair);
-    el('side-task').textContent  = I18N.pick(DRIVE_BRIEF.task);
+    el('side-task').textContent  = I18N.pick(B.task);
     clear(el('side-signs'));
   }
 
-  function startDrive(){
+  function startDrive(which){
     state.mode = 'drive';
+    if (which === 'frankfurt' || which === 'random') state.driveMap = which;
     var seed = Math.floor(Math.random()*100000);
-    state.world = new Drive.DriveWorld({ seed:seed, cols:6, rows:5, target:1e9 });
+    state.world = new Drive.DriveWorld({ seed:seed, cols:6, rows:5, target:1e9,
+      preset: state.driveMap === 'random' ? null : 'eschersheim' });
     input.throttle = false; input.brake = false; input.indicator = 'off';
     look.left = false; look.right = false;
     state.yaw = 0; state.yawTarget = 0; state.drag = null;
@@ -5328,7 +6278,7 @@ var POV = (function(){
     show('overlay-result', false);
     show('overlay-ref', false);
     show('overlay-fault', false);
-    el('btn-end-drive').classList.remove('hidden');
+    el('btn-end-drive').classList.remove('hidden'); el('btn-end-hud').classList.remove('hidden');
     applyView();
     resize();
     updateHud();
@@ -5825,10 +6775,12 @@ var POV = (function(){
     el('btn-list').onclick  = toMenu;
     el('btn-menu').onclick  = toMenu;
     el('btn-quit').onclick  = toMenu;
-    el('btn-drive').onclick = startDrive;
+    el('btn-drive').onclick = function(){ startDrive('frankfurt'); };
+    el('btn-drive-random').onclick = function(){ startDrive('random'); };
     el('btn-fault-continue').onclick = resumeDrive;
     el('btn-fault-rewind').onclick = rewindDrive;
     el('btn-end-drive').onclick = endDrive;
+    el('btn-end-hud').onclick = endDrive;
     el('btn-view').onclick  = toggleView;
     el('btn-ref').onclick   = function(){ buildReference(); show('overlay-ref', true); };
     el('btn-ref-close').onclick = function(){ show('overlay-ref', false); };

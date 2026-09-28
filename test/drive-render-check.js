@@ -53,7 +53,7 @@ const sandbox = {
   document:{ createElement(){ return { getContext:()=>stubCtx(), style:{} }; } }
 };
 const ctxv = vm.createContext(sandbox);
-['i18n.js','geo.js','rules.js','signs.js','sim.js','scenarios.js','city.js','drive.js','render.js','pov.js']
+['i18n.js','geo.js','rules.js','signs.js','sim.js','scenarios.js','city.js','drive.js','cityview.js','render.js','pov.js']
   .forEach(f => vm.runInContext(fs.readFileSync(path.join(__dirname,'..','js',f),'utf8'), ctxv, { filename:f }));
 const { Drive, Render, POV } = ctxv;
 const careful = require('./drive-policy.js')(ctxv);
@@ -62,8 +62,9 @@ const c = stubCtx();
 const kindsSeen = new Set();
 const DT = 1/60;
 
-for (const seed of [1, 3, 4, 7]){
-  const w = new Drive.DriveWorld({ seed, target: 99999 });
+/* the random towns, then the Frankfurt map (houses, trees, U-Bahn) */
+for (const [seed, preset] of [[1], [3], [4], [7], [2, 'eschersheim'], [9, 'eschersheim']]){
+  const w = new Drive.DriveWorld({ seed, target: 99999, preset });
   const input = { throttle:false, brake:false, indicator:'off' };
   current = 'seed' + seed + ' @0s';
   Render.frame(c, 900, 620, w, false);
@@ -106,4 +107,4 @@ if (problems.length){
   console.log(problems.length + ' rendering problem(s)');
   process.exit(1);
 }
-console.log('drive-render: 4 seeds, junction kinds seen: ' + Array.from(kindsSeen).join(', '));
+console.log('drive-render: 4 random towns + Frankfurt twice, junction kinds seen: ' + Array.from(kindsSeen).join(', '));

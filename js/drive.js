@@ -19,10 +19,16 @@ var Drive = (function(){
   /* ---------------- the world ---------------- */
   function DriveWorld(opts){
     opts = opts || {};
-    this.map  = new City.Map({ cols:opts.cols || 5, rows:opts.rows || 4, seed:opts.seed || 7 });
+    this.map  = new City.Map({ cols:opts.cols || 5, rows:opts.rows || 4, seed:opts.seed || 7,
+                               preset:opts.preset });
+    this.nextTram = { S:0, N:0 };
     this.rand = City.rng((opts.seed || 7) * 31 + 11);
     this.sc   = { limit:50, timeLimit:1e9, layout:{ type:'cross', arms:Geo.ARM_ORDER, signs:{} },
                   points:[], title:'Freie Fahrt', en:'Free drive' };
+    if (opts.preset === 'eschersheim'){
+      this.sc.title = 'Frankfurt-Eschersheim · Weißer Stein';
+      this.sc.en    = 'Frankfurt-Eschersheim · Weißer Stein';
+    }
     this.t = 0;
     this.vehicles = [];
     this.peds = [];
@@ -47,9 +53,9 @@ var Drive = (function(){
   /* ---------------- building ---------------- */
   DriveWorld.prototype.build = function(){
     City.buildConflictTable();
-    var m = this.map;
-    var start = m.nodeAt(0, m.rows - 1) || m.nodes[0];
-    var startArm = start.arms.indexOf('S') >= 0 ? 'S' : start.arms[0];
+    var m = this.map, ps = m.preset && m.preset.start;
+    var start = ps ? m.nodeAt(ps.c, ps.r) : (m.nodeAt(0, m.rows - 1) || m.nodes[0]);
+    var startArm = ps ? ps.from : (start.arms.indexOf('S') >= 0 ? 'S' : start.arms[0]);
 
     this.player = this.makeCar({
       node:start, from:startArm, steps:60, isPlayer:true,
@@ -60,9 +66,51 @@ var Drive = (function(){
     this.vehicles.push(this.player);
 
     for (var i = 0; i < TARGET_TRAFFIC; i++) this.spawnTraffic(true);
+    /* one train already somewhere on each track */
+    if (m.railCol >= 0){
+      this.spawnTram('S', 900 + this.rand()*2500);
+      this.spawnTram('N', 900 + this.rand()*2500);
+    }
   };
 
-  var CAR_COLORS = ['#e0574a','#e8b93c','#54a86b','#d8dde3','#7a6fd0','#3f8fd0','#c97b3f'];
+  /* ---------------- the U-Bahn ---------------- */
+  DriveWorld.prototype.spawnTram = function(dir, s){
+    var tr = this.map.tramRoute(dir);
+    if (!tr) return null;
+    var R = City.RAIL;
+    var v = new Sim.Vehicle({
+      path:tr.path, fromArm:tr.steps[0].from, toArm:tr.steps[0].to,
+      kind:'tram', len:R.TRAM_L, wid:R.TRAM_W, color:'#ecebe6',
+      cruise:kmh(40), v:kmh(s ? 36 : 40), s:s || 0, track:dir,
+      id:'t' + (this.nextId = (this.nextId || 0) + 1)
+    });
+    v.steps = tr.steps;
+    v.stepIdx = 0;
+    this.syncStep(v, true);
+    v.pos = v.path.at(v.s);
+    /* never drop a train onto somebody */
+    for (var i = 0; i < this.vehicles.length; i++){
+      var o = this.vehicles[i];
+      if (Geo.dist(o.pos, v.pos) < (o.len + v.len)*0.5 + 40) return null;
+    }
+    this.vehicles.push(v);
+    return v;
+  };
+  DriveWorld.prototype.manageTrams = function(){
+    if (this.map.railCol < 0) return;
+    var self = this;
+    ['S','N'].forEach(function(dir){
+      var running = self.vehicles.some(function(v){ return v.kind === 'tram' && v.track === dir && !v.done; });
+      if (running){ self.nextTram[dir] = self.t + 18 + self.rand()*20; return; }
+      if (self.t >= self.nextTram[dir]) self.spawnTram(dir, 0);
+    });
+  };
+
+  /* what a German street actually looks like: mostly silver, grey,
+     black, white and dark blue, the odd red - and ivory taxis */
+  var CAR_COLORS = ['#c9ccd1','#b7bbc1','#6d7177','#2b2f36','#1d1f23','#f1f1ee','#e4e5e2',
+                    '#1f3a5f','#2d4a6e','#9e2b25','#3d5a4a','#8a7f6d'];
+  var TAXI = '#efe6c8';
 
   DriveWorld.prototype.makeCar = function(o){
     var route = this.map.buildRoute(o.node, o.from, o.steps, this.rand);
@@ -80,6 +128,7 @@ var Drive = (function(){
     });
     v.steps = built.steps;
     v.stepIdx = 0;
+    if (!o.isPlayer && !o.color && this.rand() < 0.07){ v.taxi = true; v.color = TAXI; }
     this.syncStep(v, true);
     v.pos = v.path.at(v.s);
     return v;
@@ -123,6 +172,17 @@ var Drive = (function(){
   /* Two cars conflict only if they are both at the same junction. */
   DriveWorld.prototype.conflictBetween = function(a, b){
     if (!a.node || !b.node || a.node !== b.node) return null;
+    /* a train against a car: its own table, since a train on the main
+       road still crosses the car turning off it from the same arm */
+    var at = a.kind === 'tram', bt = b.kind === 'tram';
+    if (at || bt){
+      if (at && bt) return null;                  // separate tracks
+      var tram = at ? a : b, car = at ? b : a;
+      var rc = City.railConflict(tram.track, car.fromArm, car.toArm);
+      if (!rc) return null;
+      var st = tram.enterS + rc.st, sc = car.enterS + rc.sc;
+      return at ? { sa:st, sb:sc } : { sa:sc, sb:st };
+    }
     if (a.fromArm === b.fromArm) return null;
     /* A roundabout's conflict table is still built from straight-line
        "cross" geometry (buildConflictTable always passes kind:'cross'),
@@ -169,16 +229,20 @@ var Drive = (function(){
       var v = this.vehicles[i];
       if (v.isPlayer){ keep.push(v); continue; }
       var d = Geo.dist(v.pos, p.pos);
-      var far = d > DESPAWN_FAR;
+      /* a train runs its whole line on schedule, wherever you are */
+      var far = d > DESPAWN_FAR && v.kind !== 'tram';
       var finished = v.s >= v.path.length - 8;
       /* last resort: something wedged itself somewhere out of sight */
       var wedged = (v.stoppedFor || 0) > 25 && d > 900;
       if (!far && !finished && !wedged) keep.push(v);
     }
     this.vehicles = keep;
-    while (this.vehicles.length < TARGET_TRAFFIC + 1) {
+    var cars = keep.filter(function(v){ return v.kind !== 'tram'; }).length;
+    while (cars < TARGET_TRAFFIC + 1) {
       if (!this.spawnTraffic()) break;
+      cars++;
     }
+    this.manageTrams();
   };
 
   /* ---------------- update ---------------- */

@@ -30,6 +30,19 @@
     merk: { de:'Hier gibt es kein Drehbuch – lies jede Kreuzung, so wie sie kommt.',
             en:'There is no script here – read every junction as it comes.' }
   };
+  /* the Frankfurt map: what is special about this bit of town */
+  var FRANKFURT_BRIEF = {
+    task: { de:'Du startest auf der Eschersheimer Landstraße und fährst auf den Weißen Stein zu. ' +
+                'Neben der Hauptstraße fährt die U-Bahn (U1/U2/U3/U8) auf eigenem Gleis. Alle ' +
+                'Kreuzungen der Hauptstraße haben Ampeln; die Wohnstraßen sind Tempo 30 mit rechts vor links. ' +
+                'Der Prüfer hält an, sobald du einen Fehler machst – dann kannst du zurückspulen.',
+            en:'You start on Eschersheimer Landstraße, heading south to Weißer Stein. The U-Bahn ' +
+               '(U1/U2/U3/U8) runs on its own track beside the main road. Every junction on the main ' +
+               'road has lights; the side streets are Tempo 30 with rechts vor links. The examiner ' +
+               'stops you the moment you make a mistake – then you can rewind and try again.' },
+    merk: { de:'Wer über die Gleise abbiegt, lässt die Bahn durch – auch bei Grün, auch von hinten.',
+            en:'Turning across the tracks, let the train through – even on green, even from behind.' }
+  };
   var input = { throttle:false, brake:false, indicator:'off' };
   var look  = { left:false, right:false };
 
@@ -234,7 +247,7 @@
     show('overlay-result', false);
     show('overlay-ref', false);
     show('overlay-fault', false);
-    el('btn-end-drive').classList.add('hidden');
+    el('btn-end-drive').classList.add('hidden'); el('btn-end-hud').classList.add('hidden');
     applyView();
     resize();
     updateHud();
@@ -244,24 +257,27 @@
   /* ---------------- free drive ---------------- */
   function fillDriveBrief(){
     var w = state.world, titlePair = { de:w.sc.title, en:w.sc.en };
+    var B = w.map.preset ? FRANKFURT_BRIEF : DRIVE_BRIEF;
     el('brief-group').textContent   = I18N.t('drive.cta.button');
     el('brief-title').textContent   = I18N.pick(titlePair);
     el('brief-en').textContent      = I18N.other(titlePair);
-    el('brief-task').textContent    = I18N.pick(DRIVE_BRIEF.task);
-    el('brief-task-en').textContent = I18N.other(DRIVE_BRIEF.task);
-    el('brief-merk').textContent    = I18N.pick(DRIVE_BRIEF.merk);
-    el('brief-merk-sub').textContent = I18N.other(DRIVE_BRIEF.merk);
+    el('brief-task').textContent    = I18N.pick(B.task);
+    el('brief-task-en').textContent = I18N.other(B.task);
+    el('brief-merk').textContent    = I18N.pick(B.merk);
+    el('brief-merk-sub').textContent = I18N.other(B.merk);
     clear(el('brief-signs'));
 
     el('side-title').textContent = I18N.pick(titlePair);
-    el('side-task').textContent  = I18N.pick(DRIVE_BRIEF.task);
+    el('side-task').textContent  = I18N.pick(B.task);
     clear(el('side-signs'));
   }
 
-  function startDrive(){
+  function startDrive(which){
     state.mode = 'drive';
+    if (which === 'frankfurt' || which === 'random') state.driveMap = which;
     var seed = Math.floor(Math.random()*100000);
-    state.world = new Drive.DriveWorld({ seed:seed, cols:6, rows:5, target:1e9 });
+    state.world = new Drive.DriveWorld({ seed:seed, cols:6, rows:5, target:1e9,
+      preset: state.driveMap === 'random' ? null : 'eschersheim' });
     input.throttle = false; input.brake = false; input.indicator = 'off';
     look.left = false; look.right = false;
     state.yaw = 0; state.yawTarget = 0; state.drag = null;
@@ -275,7 +291,7 @@
     show('overlay-result', false);
     show('overlay-ref', false);
     show('overlay-fault', false);
-    el('btn-end-drive').classList.remove('hidden');
+    el('btn-end-drive').classList.remove('hidden'); el('btn-end-hud').classList.remove('hidden');
     applyView();
     resize();
     updateHud();
@@ -772,10 +788,12 @@
     el('btn-list').onclick  = toMenu;
     el('btn-menu').onclick  = toMenu;
     el('btn-quit').onclick  = toMenu;
-    el('btn-drive').onclick = startDrive;
+    el('btn-drive').onclick = function(){ startDrive('frankfurt'); };
+    el('btn-drive-random').onclick = function(){ startDrive('random'); };
     el('btn-fault-continue').onclick = resumeDrive;
     el('btn-fault-rewind').onclick = rewindDrive;
     el('btn-end-drive').onclick = endDrive;
+    el('btn-end-hud').onclick = endDrive;
     el('btn-view').onclick  = toggleView;
     el('btn-ref').onclick   = function(){ buildReference(); show('overlay-ref', true); };
     el('btn-ref-close').onclick = function(){ show('overlay-ref', false); };

@@ -70,14 +70,18 @@ var Rules = (function(){
        'follow'     -> same approach arm, a queue
      ------------------------------------------------------------------ */
   function priority(sc, a, b, t){
-    if (a.fromArm === b.fromArm)
+    /* A train beside the road coming the same way as a car is not queueing
+       behind it: the car turning off across the tracks must let it pass. */
+    var oneTram = (a.kind === 'tram') !== (b.kind === 'tram');
+    if (a.fromArm === b.fromArm && !oneTram)
       return { who:'follow', reason:'same_arm' };
 
     var ra = rankOf(sc, a, t), rb = rankOf(sc, b, t);
 
-    if (sc.railPriority && ra === rb){
-      if (a.kind === 'tram' && b.kind !== 'tram') return { who:'a', reason:'schiene' };
-      if (b.kind === 'tram' && a.kind !== 'tram') return { who:'b', reason:'schiene' };
+    if (sc.railPriority && ra === rb && oneTram){
+      /* at lights both have green: the turning rule, Sec. 9 (3) */
+      var why = sc.lights ? 'schiene_abbiegen' : 'schiene';
+      return { who: a.kind === 'tram' ? 'a' : 'b', reason:why };
     }
     if (a.kind === 'bus' && a.pullingOut) return { who:'a', reason:'bus' };
     if (b.kind === 'bus' && b.pullingOut) return { who:'b', reason:'bus' };
@@ -156,6 +160,12 @@ var Rules = (function(){
       text:{
         de:'Schienenfahrzeuge haben an ungeregelten Kreuzungen Vorrang – auch wenn sie von links kommen.',
         en:'Trams go first at junctions without signs or lights, even coming from your left (§ 8 (1) StVO).' }
+    },
+    schiene_abbiegen: {
+      title:{ de:'Abbiegen über Gleise', en:'Turning across tram tracks' },
+      text:{
+        de:'Wer abbiegt, muss Schienenfahrzeuge durchfahren lassen – auch wenn sie neben der Fahrbahn in gleicher Richtung fahren und du Grün hast.',
+        en:'When you turn, you must let trams through first, even when they run beside the road in the same direction as you and you have green (§ 9 (3) StVO).' }
     },
     bus: {
       title:{ de:'Linienbus fährt ab', en:'Bus leaving its stop' },

@@ -85,8 +85,10 @@ var I18N = (function(){
                'waits for pedestrians, and rail vehicles go first.',
 
       'drive.cta.title':'Ready for the real thing?',
-      'drive.cta.sub':'Drive an open Frankfurt-style town: every junction kind, one after another, no script.',
-      'drive.cta.button':'Free drive',
+      'drive.cta.sub':'Drive the streets around Weißer Stein in Frankfurt-Eschersheim: traffic lights, ' +
+                      'the U-Bahn beside the main road, Tempo-30 side streets with rechts vor links. Get it wrong, rewind, try again.',
+      'drive.cta.button':'Drive Frankfurt',
+      'drive.cta.random':'Random town',
       'drive.fault.stopped':'Hold on a moment',
       'drive.fault.sub':'Here is what just went wrong:',
       'drive.fault.continue':'Drive on (keep the mistake)',
@@ -95,7 +97,7 @@ var I18N = (function(){
       'drive.fault.rewindKey':'Space',
       'drive.hold':'Rewound {s} s. Press GAS (W) to try again — {tip}',
       'drive.hold.retrying':'Retrying: {what}',
-      'drive.end':'End drive',
+      'drive.end':'End drive', 'drive.endShort':'End',
       'drive.result.title':'Drive ended',
       'drive.result.sub':'{a} junctions driven cleanly.',
       'drive.result.explained':'Mistakes still on your sheet:',
@@ -160,9 +162,10 @@ var I18N = (function(){
                'warten auf Fussgänger, Schienenfahrzeuge haben Vorrang.',
 
       'drive.cta.title':'Bereit für den Ernstfall?',
-      'drive.cta.sub':'Fahr frei durch eine Stadt im Frankfurter Stil: jede Kreuzungsart, ' +
-                       'nacheinander, ohne Drehbuch.',
-      'drive.cta.button':'Freie Fahrt',
+      'drive.cta.sub':'Fahr durch die Straßen rund um den Weißen Stein in Frankfurt-Eschersheim: Ampeln, ' +
+                       'die U-Bahn neben der Hauptstraße, Tempo-30-Straßen mit rechts vor links. Fehler gemacht? Zurückspulen, nochmal.',
+      'drive.cta.button':'Frankfurt fahren',
+      'drive.cta.random':'Zufällige Stadt',
       'drive.fault.stopped':'Einen Moment bitte',
       'drive.fault.sub':'Das ist gerade schiefgelaufen:',
       'drive.fault.continue':'Weiterfahren (Fehler zählt)',
@@ -171,7 +174,7 @@ var I18N = (function(){
       'drive.fault.rewindKey':'Leertaste',
       'drive.hold':'{s} s zurückgespult. GAS (W) drücken und nochmal versuchen — {tip}',
       'drive.hold.retrying':'Neuer Versuch: {what}',
-      'drive.end':'Fahrt beenden',
+      'drive.end':'Fahrt beenden', 'drive.endShort':'Ende',
       'drive.result.title':'Fahrt beendet',
       'drive.result.sub':'{a} Kreuzungen fehlerfrei gemeistert.',
       'drive.result.explained':'Diese Fehler stehen noch auf deinem Bogen:',

@@ -116,7 +116,7 @@ var City = (function(){
     mainCol:2, mainRow:1,
     start:{ c:2, r:1, from:'N' },                // heading south into Weißer Stein
     stops:{ '4,1':'stop' },                      // one real Stop sign on the way
-    zebras:{ '1,3':'W', '4,2':'N', '0,2':'E' },
+    zebras:{},                                   // none until free drive has pedestrians
     gruenpfeil:{ '2,3':['W'] },
     places:{ '2,1':'Weißer Stein', '2,2':'Lindenbaum' }
   };
@@ -145,8 +145,13 @@ var City = (function(){
     var pool = shuffled(FRANKFURT_STREETS, srand);
     this.rowStreets = []; this.colStreets = [];
     var ri, ci;
-    for (ri = 0; ri < this.rows; ri++) this.rowStreets.push(pool[ri % pool.length]);
-    for (ci = 0; ci < this.cols; ci++) this.colStreets.push(pool[(this.rows + ci) % pool.length]);
+    if (preset){
+      this.rowStreets = preset.rowStreets.slice();
+      this.colStreets = preset.colStreets.slice();
+    } else {
+      for (ri = 0; ri < this.rows; ri++) this.rowStreets.push(pool[ri % pool.length]);
+      for (ci = 0; ci < this.cols; ci++) this.colStreets.push(pool[(this.rows + ci) % pool.length]);
+    }
     this.nodes = [];
 
     var c, r, i;
@@ -161,8 +166,10 @@ var City = (function(){
       }
     }
     /* which streets are through-roads */
-    var priRow = 1 + Math.floor(rand()*Math.max(1, this.rows-1));
-    var priCol = 1 + Math.floor(rand()*Math.max(1, this.cols-1));
+    var priRow = preset ? preset.mainRow : 1 + Math.floor(rand()*Math.max(1, this.rows-1));
+    var priCol = preset ? preset.mainCol : 1 + Math.floor(rand()*Math.max(1, this.cols-1));
+    this.priRow = priRow; this.priCol = priCol;
+    this.railCol = preset ? preset.mainCol : -1;
 
     for (i = 0; i < this.nodes.length; i++){
       var n = this.nodes[i];
@@ -176,8 +183,37 @@ var City = (function(){
 
       var onPriRow = (n.r === priRow), onPriCol = (n.c === priCol);
       var roll = rand();
+      var key = n.c + ',' + n.r;
 
-      if (onPriRow && onPriCol){
+      if (preset && onPriCol){
+        /* every crossing of the main road is lit - the U-Bahn crosses
+           there too, and the tram runs with the main road's green */
+        n.lights = {
+          groups:{ N:'A', S:'A', E:'B', W:'B' }, t0: Math.floor(rand()*20),
+          /* with an all-red gap each way, so a 25 m train that took
+             the amber has time to clear the side road */
+          program:[ { A:'green', B:'red', dur:14 }, { A:'yellow', B:'red', dur:3 },
+                    { A:'red', B:'red', dur:2 },
+                    { A:'red', B:'redyellow', dur:1.5 }, { A:'red', B:'green', dur:11 },
+                    { A:'red', B:'yellow', dur:3 }, { A:'red', B:'red', dur:2 },
+                    { A:'redyellow', B:'red', dur:1.5 } ]
+        };
+        n.arms.forEach(function(a){ n.layout.signs[a] = 'none'; });
+        n.kind = 'lights';
+        n.rail = RAIL;
+        n.railPriority = true;
+        if (preset.gruenpfeil[key]) n.gruenpfeil = preset.gruenpfeil[key];
+      } else if (preset && onPriRow){
+        n.arms.forEach(function(a){
+          n.layout.signs[a] = (a === 'E' || a === 'W') ? 'priority' : (preset.stops[key] || 'yield');
+        });
+        n.kind = 'priority';
+      } else if (preset){
+        n.arms.forEach(function(a){ n.layout.signs[a] = 'none'; });
+        n.kind = 'rvl';
+        if (preset.zebras[key] && n.arms.indexOf(preset.zebras[key]) >= 0)
+          n.layout.crossings = [preset.zebras[key]];
+      } else if (onPriRow && onPriCol){
         /* two main roads meeting: put lights here */
         n.lights = {
           groups:{ N:'A', S:'A', E:'B', W:'B' }, t0: Math.floor(rand()*20),
@@ -205,13 +241,16 @@ var City = (function(){
       }
 
       /* a zebra crossing on some approaches of quiet junctions */
-      if (n.kind === 'rvl' && rand() > 0.72){
+      if (!preset && n.kind === 'rvl' && rand() > 0.72){
         n.layout.crossings = [n.arms[Math.floor(rand()*n.arms.length)]];
       }
       n.limit = (n.kind === 'rvl' || n.kind === 'roundabout') ? 30 : 50;
       /* the rule engine reads these off an object shaped like a scenario */
-      n.railPriority = false;
+      if (!n.rail) n.railPriority = false;
+      if (preset && preset.places[key]) n.place = preset.places[key];
     }
+    /* a stable look for every block of houses, from its own seed */
+    this.blockSeed = (opts.seed || 7) * 131 + 17;
     this.nodeAt = function(cc, rr){
       if (cc < 0 || rr < 0 || cc >= this.cols || rr >= this.rows) return null;
       return this.nodes[rr*this.cols + cc];
@@ -268,7 +307,12 @@ var City = (function(){
 
     route.forEach(function(step, i){
       var piece = junctionPiece(step.from, step.to, step.node.layout.type);
-      var startIdx = pts.length;
+      /* the link before this junction already ends on the piece's first
+         point, which push() then drops as a duplicate - the junction
+         starts at that shared point, not at the one after it */
+      var first = { x:step.node.x + piece[0].x, y:step.node.y + piece[0].y };
+      var startIdx = (pts.length && Geo.dist(pts[pts.length-1], first) <= 0.5)
+                   ? pts.length - 1 : pts.length;
       piece.forEach(function(q){ push({ x:step.node.x + q.x, y:step.node.y + q.y }); });
       marks.push({ step:step, startIdx:startIdx, endIdx:pts.length - 1 });
       var nxt = route[i+1];
@@ -286,7 +330,9 @@ var City = (function(){
       var n = m.step.node;
       /* the give-way line is set back from the carriageway edge, so a car
          waiting at it stands clear of the traffic crossing in front */
-      var holdR = n.layout.type === 'roundabout' ? CFG.RING + 76 : CFG.BOX + 34;
+      var holdR = n.layout.type === 'roundabout' ? CFG.RING + 76
+                : (n.rail && m.step.from === n.rail.side) ? n.rail.carHold   // before the tracks
+                : CFG.BOX + 34;
       var enterS = path.cum[m.startIdx];
       var exitS  = path.cum[m.endIdx];
       /* the give-way line: first point inside holdR, searched only
@@ -302,10 +348,52 @@ var City = (function(){
     return { path:path, steps:steps };
   };
 
+  /* ---------------- the U-Bahn ---------------- */
+  /* One straight run down the whole main road, per direction, with the
+     same landmarks a car's route carries for every junction it crosses:
+     where the junction's geometry starts and ends, and where the train
+     waits at a red light (short of the side road it crosses). */
+  Map.prototype.tramRoute = function(dir){
+    if (this.railCol < 0) return null;
+    var col = [], r;
+    for (r = 0; r < this.rows; r++) col.push(this.nodeAt(this.railCol, r));
+    var south = dir === 'S';
+    if (!south) col.reverse();
+    var x = col[0].x + RAIL.track[dir];
+    var run = ENTRY + LINK + 400;
+    var y0 = south ? col[0].y - run : col[0].y + run;
+    var y1 = south ? col[col.length-1].y + run : col[col.length-1].y - run;
+    var path = new Geo.Path([{ x:x, y:y0 }, { x:x, y:y1 }]);
+    function sAt(y){ return Math.abs(y - y0); }
+    var k = south ? 1 : -1;
+    var steps = col.map(function(n){
+      return { node:n, from: south ? 'N' : 'S', to: south ? 'S' : 'N',
+               enterS: sAt(n.y - k*ENTRY), exitS: sAt(n.y + k*ENTRY),
+               junctionS: sAt(n.y - k*RAIL.tramHold) };
+    });
+    return { path:path, steps:steps };
+  };
+
+  /* Where a train on track `dir` and a car making the move from->to meet
+     inside one junction, both measured from the start of that junction's
+     geometry. Turning off the main road across the tracks is the classic
+     case: Sec. 9 (3) StVO makes you let the train through first. */
+  var RAIL_CONFLICT = {};
+  function railConflict(dir, from, to){
+    var key = dir + '|' + from + to;
+    if (key in RAIL_CONFLICT) return RAIL_CONFLICT[key];
+    var x = RAIL.track[dir], k = dir === 'S' ? 1 : -1;
+    var tram = new Geo.Path([{ x:x, y:-k*ENTRY }, { x:x, y:k*ENTRY }]);
+    var car  = new Geo.Path(junctionPiece(from, to, 'cross'));
+    var c = Geo.conflictOf(tram, car, RAIL.TRAM_W/2 + CFG.CAR_W/2 + 10);
+    return (RAIL_CONFLICT[key] = c ? { st:c.sa, sc:c.sb } : null);
+  }
+
   return {
-    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK,
+    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK, RAIL:RAIL,
     Map:Map, junctionPiece:junctionPiece,
     localConflict:localConflict, buildConflictTable:buildConflictTable,
+    railConflict:railConflict,
     rng:rng
   };
 })();

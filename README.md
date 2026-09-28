@@ -105,12 +105,34 @@ The **Merkblatt** button opens a one-page summary of every rule the game tests.
 
 ## Free drive
 
-Once the lessons feel routine, the **Free drive** panel on the menu drops you
-into an open town — a grid of junctions modelled on Frankfurt, street names
-included, generated fresh from a random seed. Every junction kind from the
-lessons shows up somewhere in it: rechts-vor-links, give-way and stop signs,
-a priority road, traffic lights, and a roundabout, plus real cross-traffic
-instead of the lesson's hand-placed cars.
+Once the lessons feel routine, **Drive Frankfurt** on the menu puts you on
+Eschersheimer Landstraße in Frankfurt-Eschersheim, heading south into
+**Weißer Stein**. The streets around it are the real ones, in their real
+order (names and junction types from OpenStreetMap), straightened onto the
+game's grid:
+
+- **Eschersheimer Landstraße** is the main road, with lights at every
+  junction, and the **U-Bahn** (U1/U2/U3/U8) runs on its own track bed
+  beside it. Turn off the main road across the tracks and the train goes
+  first, even on your green and even from behind (§ 9 (3) StVO) — the
+  classic Frankfurt exam trap. Cars from the side street wait *before* the
+  tracks.
+- **Am Weißen Stein** crosses it as a priority road; its side streets have
+  give-way signs and one real stop sign.
+- Everything else is **Tempo 30 with rechts vor links**, as in the real
+  area.
+- Simplifications: the real streets are not a grid, one-way streets are
+  two-way here, and there are no pedestrians or cyclists in free drive yet.
+
+**Random town** next to it builds a made-up grid from a random seed instead,
+with a roundabout and more mixed junctions.
+
+The driver's view shows the whole town: every junction near you, pavements,
+blocks of three-to-five-storey houses with windows and shopfronts (lit at
+night), street trees and lamps, the track bed with its rails, the blue U-sign
+at the stations, and the Frankfurt banking towers on the horizon to the south.
+Houses block your view into side streets exactly as they do in a real town,
+which is why you have to look.
 
 There is no script and no per-junction task: you just drive, following the
 turn-by-turn instruction in the HUD, and the examiner stays quiet until you
@@ -163,8 +185,9 @@ js/rules.js          priority engine + fault catalogue (the teaching content)
 js/signs.js          German road signs drawn as vectors
 js/sim.js            vehicles, pedestrians, lights, the examiner
 js/scenarios.js      the 19 lessons
-js/city.js           the open-world map: grid, junctions, Frankfurt street names
-js/drive.js          DriveWorld - free driving through the open world
+js/city.js           the open-world map: grid, junctions, Weißer Stein preset, U-Bahn
+js/drive.js          DriveWorld - free driving through the open world, trams, rewind
+js/cityview.js       the town around the roads: houses, trees, lamps, track bed
 js/render.js         top-down drawing
 js/pov.js            the driver's-seat view (perspective projection)
 js/i18n.js           interface language, English and German
@@ -218,6 +241,7 @@ node test/drive-check.js         # open world: no false accusations, no gridlock
 node test/drive-render-check.js  # open world: every junction kind draws cleanly
 node test/longhalt-check.js      # a long wait at a busy crossing always ends
 node test/rewind-check.js        # break a rule, rewind, retry: the town restores cleanly
+node test/tram-check.js          # Frankfurt map: trains run, get priority, nobody is falsely accused
 ```
 
 `harness.js` is the useful one for the lessons. It drives each lesson twice —

@@ -83,9 +83,80 @@ var Render = (function(){
     return scale;
   }
 
+  /* ---------- the town, seen from above ---------- */
+  /* Everything here is in real map coordinates. The single-junction
+     drawing below works as if its junction sat at the origin, so the
+     frame translates onto each junction before calling it. */
+  function drawCity(ctx, world){
+    var map = world.map, view = CityView.build(map);
+    var night = isNight();
+    ctx.fillStyle = night ? '#34322d' : '#b9b3a6';
+    var b0 = view.colX(-2), b1 = view.colX(map.cols + 1), c0 = view.rowY(-2), c1 = view.rowY(map.rows + 1);
+    ctx.fillRect(b0, c0, b1 - b0, c1 - c0);
+    ctx.fillStyle = night ? '#1f271b' : '#7d9a5f';
+    view.blocks.forEach(function(b){ ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0); });
+
+    var bed = CityView.railBed(map);
+    if (bed){
+      ctx.fillStyle = night ? '#35302a' : '#8a8173';
+      ctx.fillRect(bed.x0, bed.y0, bed.x1 - bed.x0, bed.y1 - bed.y0);
+    }
+    var reach = City.SPACING/2 + 2;
+    map.nodes.forEach(function(n){
+      ctx.save(); ctx.translate(n.x, n.y);
+      drawJunctionGround(ctx, n, reach);
+      ctx.restore();
+    });
+    if (bed){
+      ctx.strokeStyle = COL.rail; ctx.lineWidth = 2.5;
+      bed.tracks.forEach(function(tx){
+        [-9, 9].forEach(function(o){
+          ctx.beginPath(); ctx.moveTo(tx + o, bed.y0); ctx.lineTo(tx + o, bed.y1); ctx.stroke();
+        });
+      });
+    }
+    map.nodes.forEach(function(n){
+      ctx.save(); ctx.translate(n.x, n.y);
+      drawJunctionMarkings(ctx, n, reach);
+      ctx.restore();
+    });
+  }
+  /* rooftops and tree crowns go over the ground, under the traffic */
+  function drawCityTops(ctx, world){
+    var view = CityView.build(world.map), night = isNight();
+    view.houses.forEach(function(h){
+      ctx.fillStyle = COL.shadow;
+      ctx.fillRect(h.x0 + 10, h.y0 + 12, h.x1 - h.x0, h.y1 - h.y0);
+      ctx.fillStyle = h.roof || h.color;
+      if (night) ctx.globalAlpha = 0.75;
+      ctx.fillRect(h.x0, h.y0, h.x1 - h.x0, h.y1 - h.y0);
+      ctx.globalAlpha = 1;
+      /* the ridge line of a pitched roof */
+      if (h.roof){
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (h.front === 'N' || h.front === 'S'){
+          var ym = (h.y0 + h.y1)/2; ctx.moveTo(h.x0, ym); ctx.lineTo(h.x1, ym);
+        } else {
+          var xm = (h.x0 + h.x1)/2; ctx.moveTo(xm, h.y0); ctx.lineTo(xm, h.y1);
+        }
+        ctx.stroke();
+      }
+    });
+    view.trees.forEach(function(t){
+      ctx.fillStyle = night ? 'rgba(36,54,31,0.9)' : 'rgba(86,122,69,0.92)';
+      ctx.beginPath(); ctx.arc(t.x, t.y, t.r*0.9, 0, Math.PI*2); ctx.fill();
+    });
+  }
+  function isNight(){
+    var h = (COL.road || '').replace('#','');
+    var n = parseInt(h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h, 16);
+    return isNaN(n) ? true : ((n>>16)&255) < 90;
+  }
+
   /* ---------- ground ---------- */
   function drawGround(ctx, world){
-    var sc = world.junctionFor(world.player), L = sc.layout, i;
+    var sc = world.junctionFor(world.player), i;
     ctx.fillStyle = COL.grass;
     ctx.fillRect(-CFG.FAR*1.4, -CFG.FAR*1.4, CFG.FAR*2.8, CFG.FAR*2.8);
 
@@ -95,7 +166,10 @@ var Render = (function(){
       if ((i+j)%2) continue;
       ctx.fillRect(i*130-60, j*130-60, 66, 66);
     }
-
+    drawJunctionGround(ctx, sc, CFG.FAR);
+  }
+  function drawJunctionGround(ctx, sc, reach){
+    var L = sc.layout;
     var ring = L.type === 'roundabout';
     var inner = ring ? CFG.RING + CFG.BOX : 0;
 
@@ -104,9 +178,9 @@ var Render = (function(){
       ctx.save();
       ctx.rotate(armAngle(arm));
       ctx.fillStyle = COL.kerb;
-      ctx.fillRect(inner ? inner-6 : 0, -CFG.BOX-7, CFG.FAR, CFG.BOX*2+14);
+      ctx.fillRect(inner ? inner-6 : 0, -CFG.BOX-7, reach, CFG.BOX*2+14);
       ctx.fillStyle = COL.road;
-      ctx.fillRect(inner ? inner-6 : 0, -CFG.BOX, CFG.FAR, CFG.BOX*2);
+      ctx.fillRect(inner ? inner-6 : 0, -CFG.BOX, reach, CFG.BOX*2);
       ctx.restore();
     });
 
@@ -167,7 +241,10 @@ var Render = (function(){
 
   /* ---------- road markings ---------- */
   function drawMarkings(ctx, world){
-    var sc = world.junctionFor(world.player), L = sc.layout;
+    drawJunctionMarkings(ctx, world.junctionFor(world.player), CFG.FAR);
+  }
+  function drawJunctionMarkings(ctx, sc, reach){
+    var L = sc.layout;
     var ring = L.type === 'roundabout';
     var inner = ring ? CFG.RING + CFG.BOX : CFG.BOX;
 
@@ -179,16 +256,20 @@ var Render = (function(){
       ctx.strokeStyle = COL.paintDim; ctx.lineWidth = 4;
       ctx.setLineDash([26, 22]);
       ctx.beginPath();
-      ctx.moveTo(inner + 14, 0); ctx.lineTo(CFG.FAR, 0);
+      ctx.moveTo(inner + 14, 0); ctx.lineTo(reach, 0);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      /* give-way / stop line on the approach half (local y in [-BOX,0]) */
+      /* give-way / stop line on the approach half (local y in [-BOX,0]);
+         in town it sits where a car's front really stops, and beside
+         the U-Bahn in front of the tracks */
       var sign  = Rules.signOf(sc, arm);
       var lit   = sc.lights && sc.lights.groups[arm];
-      var lineX = ring ? CFG.RING + CFG.BOX + 8 : CFG.BOX + 8;
+      var lineX = ring ? CFG.RING + CFG.BOX + 8
+                : (sc.rail && arm === sc.rail.side) ? sc.rail.carHold - 2
+                : sc.x !== undefined ? CFG.BOX + 30 : CFG.BOX + 8;
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Sim.CROSS_MID + Sim.CROSS_HALF + 12;
+      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
 
       if (lit || sign === 'stop'){
         ctx.fillStyle = COL.paint;
@@ -328,8 +409,10 @@ var Render = (function(){
       var st = Rules.lightFor(sc, arm, world.t);
       if (!st) return;
       var o = Geo.ARM_VEC[arm], r = Geo.rot90cw(o);
-      var x = o.x*(CFG.BOX+30) + r.x*(-(CFG.BOX+30));
-      var y = o.y*(CFG.BOX+30) + r.y*(-(CFG.BOX+30));
+      /* beside the U-Bahn the signal stands before the tracks */
+      var d = (sc.rail && arm === sc.rail.side) ? sc.rail.carHold + 8 : CFG.BOX + 30;
+      var x = o.x*d + r.x*(-(CFG.BOX+30));
+      var y = o.y*d + r.y*(-(CFG.BOX+30));
       ctx.save();
       ctx.translate(x, y);
       ctx.fillStyle = '#15181c';
@@ -449,13 +532,23 @@ var Render = (function(){
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,w,h);
     var scale = camera(ctx, w, h, world, preview);
-    drawGround(ctx, world);
-    drawMarkings(ctx, world);
+    /* the junction's own drawing is built around the origin: move onto
+       wherever it really is (a lesson's is at the origin anyway) */
+    var j = world.junctionFor(world.player);
+    if (world.map) drawCity(ctx, world);
+    ctx.save(); ctx.translate(j.x || 0, j.y || 0);
+    if (!world.map){ drawGround(ctx, world); drawMarkings(ctx, world); }
+    ctx.restore();
+    if (world.map) drawCityTops(ctx, world);
     drawRoute(ctx, world);
+    ctx.save(); ctx.translate(j.x || 0, j.y || 0);
     drawSigns(ctx, world, scale);
     drawPeds(ctx, world);
+    ctx.restore();
     world.vehicles.forEach(function(v){ if (!v.done) drawVehicle(ctx, v, world.t); });
+    ctx.save(); ctx.translate(j.x || 0, j.y || 0);
     drawLights(ctx, world);
+    ctx.restore();
 
     if (world.crashPoint){
       var c = world.crashPoint, r = 26 + Math.sin(world.endTimer*9)*6;

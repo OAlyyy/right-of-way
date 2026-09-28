@@ -235,6 +235,7 @@ h1 em{ font-style:normal; color:var(--accent-deep); }
 .drive-cta-txt{ flex:1 1 240px; }
 .drive-cta-title{ font-family:var(--font-label); font-weight:700; font-size:16px; letter-spacing:.02em; }
 .drive-cta-sub{ font-size:13px; color:var(--ink-2); margin-top:2px; }
+.drive-cta-btns{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
 .tally{
   display:flex; align-items:center; gap:10px;
@@ -557,8 +558,10 @@ kbd{
 .ref-en{ font-size:12px; color:var(--ink-3); }
 
 /* --------------------------- responsive -------------------------- */
+#btn-end-hud{ display:none; }
 @media (max-width:960px){
   #side{ display:none; }
+  #btn-end-hud{ display:block; }
   #hud-task{ display:block; }
   #hud{ flex-wrap:wrap; }
 }

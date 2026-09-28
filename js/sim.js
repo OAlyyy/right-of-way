@@ -57,6 +57,8 @@ var Sim = (function(){
   /* speed we may still have now in order to be stopped at distance d */
   /* Is this vehicle actually coming, or is it parked at its own line? */
   function isApproaching(o){
+    /* a train standing at its signal is waiting for green, not parked */
+    if (o.kind === 'tram') return true;
     if (o.v > kmh(3)) return true;
     if (o.lineS !== undefined && o.s < o.lineS - 4) return false;
     return true;
@@ -354,7 +356,8 @@ var Sim = (function(){
          wide junction a car can clear its line well before it reaches
          where the paths actually cross, and stops needing to look out for
          someone already committed right when it matters most. */
-      if (occupying && veh.s < c.sa - 10 && tMe < 3.2)
+      /* ...and a car still standing does not move off into them at all */
+      if (occupying && veh.s < c.sa - 10 && (tMe < 3.2 || veh.v < kmh(5)))
         want(approachV(Math.max(0, c.sa - veh.s - 14), CFG.AI_DEC), o, 'occupied');
 
       var merging = (veh.toArm === o.toArm) && veh.s > veh.lineS + 6;
@@ -392,6 +395,8 @@ var Sim = (function(){
     for (var i=0;i<this.vehicles.length;i++){
       var o = this.vehicles[i];
       if (o === veh || o.done) continue;
+      /* a train on its track is never "the car in front" of a car */
+      if ((o.kind === 'tram') !== (veh.kind === 'tram')) continue;
       var dx = o.pos.x - veh.pos.x, dy = o.pos.y - veh.pos.y;
       if (Math.hypot(dx,dy) > 420) continue;
       var lon =  dx*c + dy*s;
@@ -419,6 +424,15 @@ var Sim = (function(){
       var o = this.vehicles[i];
       if (o === veh || o.done) continue;
       if (Geo.dist(o.pos, veh.pos) > 230) continue;
+      /* A stand-off: two cars nosed into the same junction, each stopped
+         for the other - or a ring of them, all inside and all standing.
+         Somebody waves somebody through; settle it the same way every
+         time so exactly one of them moves. Never applies to the player. */
+      var still = (veh.stoppedFor || 0) > 6 && (o.stoppedFor || 0) > 6 && !o.isPlayer &&
+                  veh.kind !== 'tram' && o.kind !== 'tram';        // a train never waves anyone on
+      var mutual = o.brakeCause === veh ||
+                   ((veh.stoppedFor || 0) > 20 && veh.s > veh.lineS && o.s > o.lineS);
+      if (still && mutual && String(veh.id) < String(o.id)) continue;
       near.push({ veh:o, circ:bodyCircles(o) });
     }
     if (!near.length) return { v:1e9, who:null };
@@ -616,7 +630,9 @@ var Sim = (function(){
            behind it we are where we belong. */
         if (!this.conflictBetween(p, o)) continue;
         if (p.s < p.lineS) continue;
-        if (Geo.dist(o.pos, p.pos) > 130) continue;
+        /* measured nose to body: a 25 m train's centre is far from the
+           car it is braking for even when its front is right there */
+        if (Geo.dist(o.pos, p.pos) - Math.max(0, o.len - CFG.CAR_L)*0.5 > 130) continue;
         var dh = Math.abs(Math.atan2(Math.sin(o.pos.h - p.pos.h), Math.cos(o.pos.h - p.pos.h)));
         if (dh < 0.6) continue;                 // same direction: just traffic
       }
@@ -892,6 +908,13 @@ var Sim = (function(){
         return t === 'left'
           ? { de:'Blinker links setzen.', en:'Indicate left.' }
           : { de:'Blinker rechts setzen.', en:'Indicate right.' };
+      /* turning across the tracks beside the main road */
+      var JJ = this.junctionFor(p);
+      /* only off the main road, where the train shares your green */
+      if (JJ.rail && p.toArm === JJ.rail.side && (p.fromArm === 'N' || p.fromArm === 'S') &&
+          p.s > p.lineS - 260)
+        return { de:'Du biegst über die Gleise ab: Schulterblick – Bahnen von hinten und von vorn haben Vorrang.',
+                 en:'You are turning across the tram tracks: look over your shoulder – trains from behind and ahead go first.' };
       if (p.v < kmh(3) && p.s > p.lineS - 120)
         return { de:'Frei – du darfst fahren.', en:'Clear – you may go.' };
       /* in the driver view you have to actually look before you go */

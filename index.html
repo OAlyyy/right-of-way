@@ -38,7 +38,10 @@
         <div class="drive-cta-title" data-t="drive.cta.title"></div>
         <div class="drive-cta-sub" data-t="drive.cta.sub"></div>
       </div>
-      <button id="btn-drive" class="primary" type="button" data-t="drive.cta.button"></button>
+      <div class="drive-cta-btns">
+        <button id="btn-drive" class="primary" type="button" data-t="drive.cta.button"></button>
+        <button id="btn-drive-random" class="ghost small" type="button" data-t="drive.cta.random"></button>
+      </div>
     </div>
 
     <div class="tally">
@@ -80,6 +83,8 @@
             <div class="chip readout"><span id="hud-time-label" data-t="hud.time"></span> <b id="hud-time">45</b></div>
             <div class="chip readout"><span data-t="hud.faults"></span> <b id="hud-faults">0</b></div>
             <button id="btn-view" class="chip readout btn" type="button">2D</button>
+            <!-- the sidebar (and its End drive button) is hidden on narrow screens -->
+            <button id="btn-end-hud" class="chip readout btn hidden" type="button" data-t="drive.endShort"></button>
           </div>
           <canvas id="minimap" width="296" height="296"></canvas>
         </div>
@@ -220,6 +225,7 @@
 <script src="js/scenarios.js"></script>
 <script src="js/city.js"></script>
 <script src="js/drive.js"></script>
+<script src="js/cityview.js"></script>
 <script src="js/render.js"></script>
 <script src="js/pov.js"></script>
 <script src="js/main.js"></script>
