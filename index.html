@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#131210">
+<title>Kreuzungstrainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Archivo+Narrow:wght@600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <span class="brand-txt"><b>Kreuzungstrainer</b> <span class="long">&middot; Fahrschule</span></span>
+  </div>
+  <nav>
+    <button id="btn-lang"  class="nav" type="button" title="Sprache / Language">Deutsch</button>
+    <button id="btn-theme" class="nav" type="button" title="Day / Night">Night</button>
+    <button id="btn-menu"  class="nav" type="button" data-t="nav.lessons">Lessons</button>
+    <button id="btn-ref"   class="nav" type="button" data-t="nav.sheet">Cheat sheet</button>
+  </nav>
+</header>
+
+<!-- ============================ MENU ============================ -->
+<section id="screen-menu" class="screen">
+  <div class="menu-inner">
+    <div class="menu-head">
+      <h1 id="menu-h1"></h1>
+      <p class="lead" id="menu-lead"></p>
+    </div>
+
+    <div class="drive-cta">
+      <div class="drive-cta-txt">
+        <div class="drive-cta-title" data-t="drive.cta.title"></div>
+        <div class="drive-cta-sub" data-t="drive.cta.sub"></div>
+      </div>
+      <button id="btn-drive" class="primary" type="button" data-t="drive.cta.button"></button>
+    </div>
+
+    <div class="tally">
+      <div class="tally-bar"><div class="tally-fill" id="tally-fill" style="width:0%"></div></div>
+      <div class="tally-txt" id="progress-line">0 / 19</div>
+    </div>
+
+    <div id="level-grid"></div>
+
+    <div class="menu-foot">
+      <button id="btn-reset" class="ghost" type="button" data-t="menu.reset"></button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ PLAY ============================ -->
+<section id="screen-play" class="screen hidden">
+  <div class="play-wrap">
+
+    <div id="canvas-wrap">
+      <canvas id="game"></canvas>
+
+      <div id="hud">
+        <div class="hud-left">
+          <div class="cluster-dash readout">
+            <button id="ind-l" class="ind" type="button" title="A">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4 4 12l10 8v-5h6V9h-6z"/></svg>
+            </button>
+            <div class="gauge"><span id="hud-speed">0</span><small>km/h</small></div>
+            <button id="ind-r" class="ind" type="button" title="D">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l10 8-10 8v-5H4V9h6z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div id="hud-task"></div>
+        <div class="hud-right">
+          <div class="chips">
+            <div class="limitsign" id="hud-limit">50</div>
+            <div class="chip readout"><span id="hud-time-label" data-t="hud.time"></span> <b id="hud-time">45</b></div>
+            <div class="chip readout"><span data-t="hud.faults"></span> <b id="hud-faults">0</b></div>
+            <button id="btn-view" class="chip readout btn" type="button">2D</button>
+          </div>
+          <canvas id="minimap" width="296" height="296"></canvas>
+        </div>
+      </div>
+
+      <div id="hud-hint" class="hidden"></div>
+
+      <div class="controls">
+        <div class="cluster">
+          <button id="look-l" class="ind look" type="button" title="Q">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4 4 12l10 8v-5h6V9h-6z"/></svg>
+            <small data-t="look.label">LOOK</small>
+          </button>
+          <button id="look-r" class="ind look" type="button" title="E">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l10 8-10 8v-5H4V9h6z"/></svg>
+            <small data-t="look.label">LOOK</small>
+          </button>
+        </div>
+        <div class="cluster">
+          <button id="pedal-brake" class="pedal brake" type="button"><span data-t="pedal.brake"></span><small>S</small></button>
+          <button id="pedal-gas"   class="pedal gas"   type="button"><span data-t="pedal.gas"></span><small>W</small></button>
+        </div>
+      </div>
+
+      <!-- briefing -->
+      <div id="overlay-brief" class="overlay hidden">
+        <div class="panel brief">
+          <div class="brief-head">
+            <div class="eyebrow" id="brief-group">Lektion</div>
+            <h2 id="brief-title">Titel</h2>
+            <div id="brief-en" class="sub">Subtitle</div>
+          </div>
+          <div class="task">
+            <div class="task-de" id="brief-task"></div>
+            <div class="task-en" id="brief-task-en"></div>
+          </div>
+          <div id="brief-signs" class="signs"></div>
+          <div class="merk"><b data-t="brief.remember"></b> <span id="brief-merk"></span>
+            <div class="merk-sub" id="brief-merk-sub"></div></div>
+          <div class="keys" id="brief-keys"></div>
+          <button id="btn-start" class="primary big" type="button">
+            <span data-t="brief.start"></span> <small data-t="brief.startKey"></small></button>
+        </div>
+      </div>
+
+      <!-- free-drive: stopped to explain a fault -->
+      <div id="overlay-fault" class="overlay hidden">
+        <div class="panel result">
+          <div class="res-head">
+            <div>
+              <div class="verdict bad" data-t="drive.fault.stopped"></div>
+              <div class="sub" data-t="drive.fault.sub"></div>
+            </div>
+          </div>
+          <div id="fault-card" class="faults"></div>
+          <div class="res-buttons">
+            <button id="btn-fault-rewind" class="primary" type="button">
+              <span data-t="drive.fault.rewind"></span> <small data-t="drive.fault.rewindKey"></small></button>
+            <button id="btn-fault-continue" class="ghost" type="button">
+              <span data-t="drive.fault.continue"></span> <small data-t="drive.fault.continueKey"></small></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- debrief -->
+      <div id="overlay-result" class="overlay hidden">
+        <div class="panel result">
+          <div class="res-head">
+            <div class="scorebox">
+              <div id="res-score">0</div><small data-t="res.points"></small>
+            </div>
+            <div>
+              <div id="res-verdict" class="verdict">&nbsp;</div>
+              <div id="res-sub" class="sub"></div>
+            </div>
+          </div>
+          <div id="res-faults" class="faults"></div>
+          <div id="res-points" class="points"></div>
+          <div class="res-buttons">
+            <button id="btn-retry" class="primary" type="button">
+              <span data-t="res.again"></span> <small data-t="res.againKey"></small></button>
+            <button id="btn-next"  class="primary alt" type="button">
+              <span data-t="res.next"></span> <small data-t="res.nextKey"></small></button>
+            <button id="btn-list"  class="ghost" type="button" data-t="res.list"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside id="side">
+      <div class="side-block">
+        <div class="eyebrow" data-t="side.lesson"></div>
+        <div id="side-title" class="side-title"></div>
+        <div id="side-task" class="side-task"></div>
+      </div>
+      <div class="side-block">
+        <div class="eyebrow" data-t="side.signs"></div>
+        <div id="side-signs" class="side-signs"></div>
+      </div>
+      <div class="side-block">
+        <div class="eyebrow" data-t="side.controls"></div>
+        <table class="ctrl">
+          <tr><td><kbd>W</kbd> <kbd>&uarr;</kbd></td><td data-t="ctrl.throttle"></td></tr>
+          <tr><td><kbd>S</kbd> <kbd>&darr;</kbd></td><td data-t="ctrl.brake"></td></tr>
+          <tr><td><kbd>Q</kbd> <kbd>E</kbd></td><td data-t="ctrl.look"></td></tr>
+          <tr><td><kbd>A</kbd> <kbd>D</kbd></td><td data-t="ctrl.indicators"></td></tr>
+          <tr><td><kbd>V</kbd></td><td data-t="ctrl.view"></td></tr>
+          <tr><td><kbd>R</kbd></td><td data-t="ctrl.restart"></td></tr>
+          <tr><td><kbd>H</kbd></td><td data-t="ctrl.hints"></td></tr>
+        </table>
+        <p class="note" data-t="side.note"></p>
+      </div>
+      <div class="side-foot">
+        <button id="btn-hints" class="ghost small" type="button" data-t="side.hints"></button>
+        <button id="btn-end-drive" class="ghost small hidden" type="button" data-t="drive.end"></button>
+        <button id="btn-quit"  class="ghost small" type="button" data-t="side.quit"></button>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ========================= REFERENCE ========================= -->
+<div id="overlay-ref" class="overlay hidden">
+  <div class="panel ref">
+    <div class="ref-head">
+      <h2 data-t="ref.title"></h2>
+      <button id="btn-ref-close" class="ghost small" type="button" data-t="ref.close"></button>
+    </div>
+    <div id="ref-body"></div>
+  </div>
+</div>
+
+<script src="js/i18n.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/rules.js"></script>
+<script src="js/signs.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/scenarios.js"></script>
+<script src="js/city.js"></script>
+<script src="js/drive.js"></script>
+<script src="js/render.js"></script>
+<script src="js/pov.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

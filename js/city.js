@@ -1,0 +1,311 @@
+'use strict';
+/* ------------------------------------------------------------------
+   city.js - the open world.
+
+   A grid of junctions joined by two-lane streets. Each junction carries
+   its own signs, so the same priority engine that runs a single lesson
+   runs the whole town. You drive a route through it; the examiner sits
+   in the passenger seat and stops you the moment you get something
+   wrong.
+   ------------------------------------------------------------------ */
+
+var City = (function(){
+
+  var SPACING = 1160;              // centre to centre (~97 m)
+  var ENTRY   = 250;               // where a junction's own geometry starts
+  var LINK    = SPACING - 2*ENTRY; // straight bit between two junctions
+
+  /* deterministic RNG so a seed always rebuilds the same town */
+  function rng(seed){
+    var x = seed || 12345;
+    return function(){
+      x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
+      return ((x >>> 0) % 100000) / 100000;
+    };
+  }
+
+  /* ---------------- the local shape of one junction ---------------- */
+  /* from the entry point on arm A to the exit point on arm B, in
+     coordinates local to the junction centre                         */
+  function junctionPiece(from, to, kind){
+    if (kind === 'roundabout'){
+      var pts = [Geo.laneIn(from, ENTRY), Geo.laneIn(from, CFG.RING + 70)];
+      var a0 = Geo.ARM_ANGLE[from] + 16, a1 = Geo.ARM_ANGLE[to] - 16;
+      while (a1 <= a0) a1 += 360;
+      for (var a = a0; a <= a1; a += 6) pts.push(Geo.ringPoint(a, CFG.RING));
+      pts.push(Geo.ringPoint(a1, CFG.RING));
+      pts.push(Geo.laneOut(to, CFG.RING + 70));
+      pts.push(Geo.laneOut(to, ENTRY));
+      return Geo.smooth(pts, 2);
+    }
+    var turn = Geo.turnOf(from, to);
+    var ext  = turn === 'straight' ? CFG.BOX : CFG.BOX + 34;
+    var p1 = Geo.laneIn(from, ext), p2 = Geo.laneOut(to, ext);
+    var out = [Geo.laneIn(from, ENTRY), p1];
+    if (turn !== 'straight'){
+      var c = Geo.lineIntersect(p1, Geo.mul(Geo.ARM_VEC[from], -1), p2, Geo.ARM_VEC[to]);
+      if (c) out = out.concat(Geo.quadPoints(p1, c, p2, 16).slice(1));
+      else out.push(p2);
+    } else out.push(p2);
+    out.push(Geo.laneOut(to, ENTRY));
+    return out;
+  }
+
+  /* Where two cars crossing the same junction actually meet.
+     Computed once for every pair of movements and reused everywhere. */
+  var CONFLICT = null;
+  function buildConflictTable(){
+    if (CONFLICT) return CONFLICT;
+    CONFLICT = {};
+    var arms = Geo.ARM_ORDER, moves = [];
+    arms.forEach(function(f){
+      arms.forEach(function(t){
+        if (f !== t) moves.push({ f:f, t:t, path:new Geo.Path(junctionPiece(f, t, 'cross')) });
+      });
+    });
+    for (var i = 0; i < moves.length; i++){
+      for (var j = 0; j < moves.length; j++){
+        if (i === j) continue;
+        var A = moves[i], B = moves[j];
+        if (A.f === B.f) continue;                 // a queue, not a crossing
+        var c = Geo.conflictOf(A.path, B.path, CFG.CAR_W + 14);
+        if (c) CONFLICT[A.f + A.t + '|' + B.f + B.t] = { sa:c.sa, sb:c.sb };
+      }
+    }
+    return CONFLICT;
+  }
+  function localConflict(fa, ta, fb, tb){
+    return buildConflictTable()[fa + ta + '|' + fb + tb] || null;
+  }
+
+  /* Real Frankfurt street names, so the free drive reads like a real
+     town instead of "Street 3". A separate RNG stream from the layout's
+     own `rand`, so naming never perturbs which junction gets which sign -
+     the two are shuffled independently. */
+  var FRANKFURT_STREETS = [
+    'Zeil', 'Kaiserstraße', 'Berger Straße', 'Mainzer Landstraße',
+    'Bockenheimer Landstraße', 'Friedberger Landstraße', 'Eschersheimer Landstraße',
+    'Hanauer Landstraße', 'Schweizer Straße', 'Leipziger Straße', 'Münchener Straße',
+    'Taunusstraße', 'Gutleutstraße', 'Niddastraße', 'Braubachstraße', 'Fahrgasse',
+    'Oeder Weg', 'Berliner Straße', 'Adickesallee', 'Miquelallee', 'Frankenallee',
+    'Darmstädter Landstraße', 'Homburger Landstraße', 'Grüneburgweg'
+  ];
+  function shuffled(list, rand){
+    var out = list.slice(), i;
+    for (i = out.length - 1; i > 0; i--){
+      var j = Math.floor(rand()*(i+1)), t = out[i]; out[i] = out[j]; out[j] = t;
+    }
+    return out;
+  }
+
+  /* ---------------- Frankfurt-Eschersheim, around Weißer Stein ----------------
+     The real streets around the Weißer Stein U-Bahn stop, in their real
+     order, straightened onto the game's grid. Eschersheimer Landstraße is
+     the main road, lit at every junction, and the U-Bahn (U1/U2/U3/U8)
+     runs on its own track bed beside it. Am Weißen Stein crosses it as a
+     priority road; everything else is a Tempo-30 residential street where
+     rechts vor links applies - which is exactly what the real area is
+     like. One-way streets are two-way here: the engine has no one-ways.
+     Street names and junction types are from OpenStreetMap (© ODbL). */
+  var ESCHERSHEIM = {
+    cols:6, rows:5,
+    colStreets:['Niedwiesenstraße', 'Alt-Eschersheim', 'Eschersheimer Landstraße',
+                'Landgraf-Philipp-Straße', 'Neumannstraße', 'Dehnhardtstraße'],
+    rowStreets:['Zehnmorgenstraße', 'Am Weißen Stein', 'Am Lindenbaum',
+                'Höllbergstraße', 'Kleinschmidtstraße'],
+    mainCol:2, mainRow:1,
+    start:{ c:2, r:1, from:'N' },                // heading south into Weißer Stein
+    stops:{ '4,1':'stop' },                      // one real Stop sign on the way
+    zebras:{ '1,3':'W', '4,2':'N', '0,2':'E' },
+    gruenpfeil:{ '2,3':['W'] },
+    places:{ '2,1':'Weißer Stein', '2,2':'Lindenbaum' }
+  };
+
+  /* Where the U-Bahn's two tracks lie, measured east of the road's centre
+     line, and the lines trams and cars wait at. Right-hand running: the
+     southbound train uses the western track, the northbound the eastern. */
+  var RAIL = {
+    side:'E',
+    track:{ S:78, N:114 },           // track centre per direction of travel
+    bed:[58, 134],                   // gravel bed, between the two kerbs
+    carHold:152,                     // cars from the east wait before the tracks
+    tramHold:CFG.BOX + 22,           // trams wait before the road
+    TRAM_L:300, TRAM_W:32            // one 25 m Stadtbahn car
+  };
+
+  /* ---------------- the map ---------------- */
+  function Map(opts){
+    opts = opts || {};
+    var preset = opts.preset === 'eschersheim' ? ESCHERSHEIM : null;
+    this.preset = preset;
+    this.cols = preset ? preset.cols : (opts.cols || 5);
+    this.rows = preset ? preset.rows : (opts.rows || 4);
+    var rand = rng(opts.seed || 7);
+    var srand = rng((opts.seed || 7) * 7919 + 104729);
+    var pool = shuffled(FRANKFURT_STREETS, srand);
+    this.rowStreets = []; this.colStreets = [];
+    var ri, ci;
+    for (ri = 0; ri < this.rows; ri++) this.rowStreets.push(pool[ri % pool.length]);
+    for (ci = 0; ci < this.cols; ci++) this.colStreets.push(pool[(this.rows + ci) % pool.length]);
+    this.nodes = [];
+
+    var c, r, i;
+    for (r = 0; r < this.rows; r++){
+      for (c = 0; c < this.cols; c++){
+        this.nodes.push({
+          id: r*this.cols + c, c:c, r:r,
+          x: (c - (this.cols-1)/2) * SPACING,
+          y: (r - (this.rows-1)/2) * SPACING,
+          arms: [], layout:{ type:'cross', signs:{} }, lights:null
+        });
+      }
+    }
+    /* which streets are through-roads */
+    var priRow = 1 + Math.floor(rand()*Math.max(1, this.rows-1));
+    var priCol = 1 + Math.floor(rand()*Math.max(1, this.cols-1));
+
+    for (i = 0; i < this.nodes.length; i++){
+      var n = this.nodes[i];
+      if (n.r > 0)           n.arms.push('N');
+      if (n.r < this.rows-1) n.arms.push('S');
+      if (n.c > 0)           n.arms.push('W');
+      if (n.c < this.cols-1) n.arms.push('E');
+      /* the renderer reads L.arms off the layout, the way a lesson's
+         scenario carries it - keep the two shapes the same */
+      n.layout.arms = n.arms;
+
+      var onPriRow = (n.r === priRow), onPriCol = (n.c === priCol);
+      var roll = rand();
+
+      if (onPriRow && onPriCol){
+        /* two main roads meeting: put lights here */
+        n.lights = {
+          groups:{ N:'A', S:'A', E:'B', W:'B' }, t0: Math.floor(rand()*20),
+          program:[ { A:'green', B:'red', dur:12 }, { A:'yellow', B:'red', dur:3 },
+                    { A:'red', B:'redyellow', dur:1.5 }, { A:'red', B:'green', dur:12 },
+                    { A:'red', B:'yellow', dur:3 }, { A:'redyellow', B:'red', dur:1.5 } ]
+        };
+        n.arms.forEach(function(a){ n.layout.signs[a] = 'none'; });
+        n.kind = 'lights';
+      } else if (onPriRow || onPriCol){
+        var mainArms = onPriRow ? ['E','W'] : ['N','S'];
+        n.arms.forEach(function(a){
+          n.layout.signs[a] = mainArms.indexOf(a) >= 0 ? 'priority'
+                            : (roll > 0.78 ? 'stop' : 'yield');
+        });
+        n.kind = 'priority';
+      } else if (roll > 0.88 && n.arms.length === 4){
+        /* the town's roundabout */
+        n.layout.type = 'roundabout';
+        n.arms.forEach(function(a){ n.layout.signs[a] = 'ringentry'; });
+        n.kind = 'roundabout';
+      } else {
+        n.arms.forEach(function(a){ n.layout.signs[a] = 'none'; });
+        n.kind = 'rvl';
+      }
+
+      /* a zebra crossing on some approaches of quiet junctions */
+      if (n.kind === 'rvl' && rand() > 0.72){
+        n.layout.crossings = [n.arms[Math.floor(rand()*n.arms.length)]];
+      }
+      n.limit = (n.kind === 'rvl' || n.kind === 'roundabout') ? 30 : 50;
+      /* the rule engine reads these off an object shaped like a scenario */
+      n.railPriority = false;
+    }
+    this.nodeAt = function(cc, rr){
+      if (cc < 0 || rr < 0 || cc >= this.cols || rr >= this.rows) return null;
+      return this.nodes[rr*this.cols + cc];
+    };
+  }
+
+  Map.prototype.neighbour = function(node, arm){
+    var d = { N:[0,-1], S:[0,1], E:[1,0], W:[-1,0] }[arm];
+    return this.nodeAt(node.c + d[0], node.r + d[1]);
+  };
+
+  /* The street a given exit from `node` belongs to: a north-south arm is
+     the column's street, an east-west arm the row's - the grid's real
+     corridors, not the junction itself. */
+  Map.prototype.streetName = function(node, arm){
+    return (arm === 'N' || arm === 'S') ? this.colStreets[node.c] : this.rowStreets[node.r];
+  };
+
+  /* ---------------- routes ---------------- */
+  /* A route is a list of junction traversals. Each one knows where it
+     starts along the path, where its give-way line is, and where it
+     hands over to the next.                                          */
+  Map.prototype.buildRoute = function(startNode, startArm, steps, rand){
+    rand = rand || Math.random;
+    var route = [], node = startNode, from = startArm, i;
+    for (i = 0; i < steps; i++){
+      var outs = node.arms.filter(function(a){ return a !== from; });
+      if (!outs.length) break;
+      /* prefer going straight on, the way a real route mostly does */
+      var straight = Geo.opposite(from);
+      var to;
+      if (outs.indexOf(straight) >= 0 && rand() < 0.5) to = straight;
+      else to = outs[Math.floor(rand()*outs.length) % outs.length];
+      var next = this.neighbour(node, to);
+      route.push({ node:node, from:from, to:to });
+      if (!next) break;
+      node = next;
+      from = Geo.opposite(to);
+    }
+    return route;
+  };
+
+  /* Turn a route into one long path, remembering the landmarks the
+     rule engine needs for every step. Points are de-duplicated here so
+     the indices still line up with the finished Path.               */
+  Map.prototype.routePath = function(route){
+    var pts = [], marks = [];
+    function push(p){
+      if (!pts.length || Geo.dist(pts[pts.length-1], p) > 0.5) pts.push(p);
+    }
+    var first = route[0];
+    var lead = Geo.laneIn(first.from, ENTRY + LINK);
+    push({ x:first.node.x + lead.x, y:first.node.y + lead.y });
+
+    route.forEach(function(step, i){
+      var piece = junctionPiece(step.from, step.to, step.node.layout.type);
+      var startIdx = pts.length;
+      piece.forEach(function(q){ push({ x:step.node.x + q.x, y:step.node.y + q.y }); });
+      marks.push({ step:step, startIdx:startIdx, endIdx:pts.length - 1 });
+      var nxt = route[i+1];
+      if (nxt){
+        var link = Geo.laneIn(nxt.from, ENTRY);
+        push({ x:nxt.node.x + link.x, y:nxt.node.y + link.y });
+      } else {
+        var out = Geo.laneOut(step.to, ENTRY + LINK);
+        push({ x:step.node.x + out.x, y:step.node.y + out.y });
+      }
+    });
+
+    var path = new Geo.Path(pts);
+    var steps = marks.map(function(m){
+      var n = m.step.node;
+      /* the give-way line is set back from the carriageway edge, so a car
+         waiting at it stands clear of the traffic crossing in front */
+      var holdR = n.layout.type === 'roundabout' ? CFG.RING + 76 : CFG.BOX + 34;
+      var enterS = path.cum[m.startIdx];
+      var exitS  = path.cum[m.endIdx];
+      /* the give-way line: first point inside holdR, searched only
+         across this junction rather than the whole route */
+      var jS = enterS;
+      for (var t = enterS; t <= exitS; t += 2){
+        var q = path.at(t);
+        if (Math.hypot(q.x - n.x, q.y - n.y) <= holdR){ jS = t; break; }
+      }
+      return { node:n, from:m.step.from, to:m.step.to,
+               enterS:enterS, exitS:exitS, junctionS:jS };
+    });
+    return { path:path, steps:steps };
+  };
+
+  return {
+    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK,
+    Map:Map, junctionPiece:junctionPiece,
+    localConflict:localConflict, buildConflictTable:buildConflictTable,
+    rng:rng
+  };
+})();

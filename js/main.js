@@ -1,0 +1,817 @@
+'use strict';
+/* ------------------------------------------------------------------
+   main.js - screens, input, HUD, scoring, progress, theme, language.
+   ------------------------------------------------------------------ */
+
+(function(){
+
+  var canvas = document.getElementById('game');
+  var ctx    = canvas.getContext('2d');
+  var mini   = document.getElementById('minimap');
+  var mctx   = mini.getContext('2d');
+  var W = 0, H = 0;
+
+  var MAX_YAW = 1.25;                 // how far you can turn your head
+
+  var state = {
+    screen:'menu', world:null, scIndex:0, mode:'lesson',
+    hints:true, view:'pov',
+    yaw:0, yawTarget:0, drag:null,
+    last:0
+  };
+
+  var DRIVE_BRIEF = {
+    task: { de:'Fahr ganz normal. Der Prüfer schweigt, bis du einen Fehler machst, und ' +
+                'hält dann an, um ihn zu erklären – dieselben Regeln wie in jeder Lektion, ' +
+                'jetzt aber alle gemischt.',
+            en:'Drive normally. The examiner sits quietly until you get something wrong, ' +
+               'then stops the car to explain it – the same rules as every lesson, now all ' +
+               'mixed together.' },
+    merk: { de:'Hier gibt es kein Drehbuch – lies jede Kreuzung, so wie sie kommt.',
+            en:'There is no script here – read every junction as it comes.' }
+  };
+  var input = { throttle:false, brake:false, indicator:'off' };
+  var look  = { left:false, right:false };
+
+  function el(id){ return document.getElementById(id); }
+  function show(id, on){ el(id).classList.toggle('hidden', !on); }
+  function clear(n){ while (n.firstChild) n.removeChild(n.firstChild); }
+  function make(tag, cls, text){
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  /* a main line in the chosen language plus the other language beneath */
+  function bilingual(parent, pair, mainCls, subCls){
+    var main = I18N.pick(pair), sub = I18N.other(pair);
+    if (main) parent.appendChild(make('div', mainCls, main));
+    if (sub && sub !== main) parent.appendChild(make('div', subCls, sub));
+  }
+
+  /* ---------------- storage ---------------- */
+  function load(key, fb){
+    try { var v = localStorage.getItem(key); return v === null ? fb : JSON.parse(v); }
+    catch(e){ return fb; }
+  }
+  function save(key, val){ try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){} }
+  var STORE = 'fahrschule.progress.v1';
+  var THEME = 'fahrschule.theme.v1';
+  var LANG  = 'fahrschule.lang.v1';
+  var VIEW  = 'fahrschule.view.v1';
+  var progress = load(STORE, {}) || {};
+
+  /* ---------------- theme ---------------- */
+  function systemDark(){
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function isDark(){
+    var a = document.documentElement.getAttribute('data-theme');
+    return a ? a === 'dark' : systemDark();
+  }
+  function applyTheme(choice){
+    if (choice) document.documentElement.setAttribute('data-theme', choice);
+    else document.documentElement.removeAttribute('data-theme');
+    el('btn-theme').textContent = I18N.t(isDark() ? 'theme.day' : 'theme.night');
+    Render.syncTheme();
+    POV.syncTheme();
+    if (state.world) draw();
+  }
+
+  /* ---------------- language ---------------- */
+  function applyLang(){
+    var l = I18N.get();
+    document.documentElement.setAttribute('lang', l);
+    el('btn-lang').textContent = I18N.t('lang.next');
+    el('btn-theme').textContent = I18N.t(isDark() ? 'theme.day' : 'theme.night');
+    el('menu-h1').innerHTML   = I18N.t('menu.h1');
+    el('menu-lead').innerHTML = I18N.t('menu.lead');
+    el('btn-view').textContent = I18N.t(state.view === 'pov' ? 'view.toTop' : 'view.toPov');
+
+    var nodes = document.querySelectorAll('[data-t]');
+    for (var i = 0; i < nodes.length; i++)
+      nodes[i].textContent = I18N.t(nodes[i].getAttribute('data-t'));
+
+    /* the keyboard legend in the briefing */
+    var keys = el('brief-keys');
+    clear(keys);
+    [['W', 'keys.throttle'], ['S', 'keys.brake'], ['Q E', 'keys.look'],
+     ['A D', 'keys.indicators'], ['V', 'keys.view'], ['H', 'keys.hints']]
+    .forEach(function(k){
+      var sp = make('span');
+      k[0].split(' ').forEach(function(key){ sp.appendChild(make('kbd', null, key)); });
+      sp.appendChild(document.createTextNode(' ' + I18N.t(k[1])));
+      keys.appendChild(sp);
+    });
+
+    el('ref-body').innerHTML = '';
+    buildMenu();
+    if (state.world){
+      if (state.mode === 'drive') fillDriveBrief();
+      else fillLesson(state.world.sc);
+    }
+    if (state.screen === 'result') refreshResultLabels();
+    if (state.world && state.world.pending && !el('overlay-fault').classList.contains('hidden'))
+      showFaultOverlay(state.world.pending);
+  }
+
+  /* ---------------- canvas sizing ---------------- */
+  function resize(){
+    var wrap = el('canvas-wrap');
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = wrap.clientWidth; H = wrap.clientHeight;
+    if (!W || !H) return;
+    canvas.width  = Math.round(W*dpr);
+    canvas.height = Math.round(H*dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (state.world) draw();
+  }
+
+  /* ---------------- menu ---------------- */
+  function buildMenu(){
+    var grid = el('level-grid');
+    clear(grid);
+    var groups = {}, order = [];
+    SCENARIOS.forEach(function(sc, i){
+      if (!groups[sc.group]){ groups[sc.group] = []; order.push(sc.group); }
+      groups[sc.group].push({ sc:sc, i:i });
+    });
+    order.forEach(function(g){
+      var sec = make('div','group');
+      sec.appendChild(make('h3','group-title eyebrow', I18N.group(g)));
+      var row = make('div','group-row');
+      groups[g].forEach(function(item){
+        var sc = item.sc, p = progress[sc.id];
+        var card = make('button','card' + (p && p.passed ? ' done' : ''));
+        card.type = 'button';
+        card.appendChild(make('div','card-lvl', I18N.t('card.level') + ' ' + sc.level));
+        card.appendChild(make('div','card-title', I18N.pick({ de:sc.title, en:sc.en })));
+        card.appendChild(make('div','card-en',    I18N.other({ de:sc.title, en:sc.en })));
+        var foot = make('div','card-foot');
+        foot.appendChild(p
+          ? make('span','badge' + (p.passed ? ' ok' : ' bad'), p.best + ' ' + I18N.t('card.points'))
+          : make('span','badge new', I18N.t('card.new')));
+        card.appendChild(foot);
+        card.onclick = function(){ startScenario(item.i); };
+        row.appendChild(card);
+      });
+      sec.appendChild(row);
+      grid.appendChild(sec);
+    });
+    var done = SCENARIOS.filter(function(s){
+      return progress[s.id] && progress[s.id].passed;
+    }).length;
+    el('progress-line').textContent = I18N.t('menu.passed', { a:done, b:SCENARIOS.length });
+    el('tally-fill').style.width = Math.round(done/SCENARIOS.length*100) + '%';
+  }
+
+  /* ---------------- lesson text ---------------- */
+  function signList(sc){
+    var out = [], L = sc.layout;
+    var mine = L.type === 'roundabout' ? 'roundabout' : Rules.signOf(sc, sc.player.from);
+    out.push(mine);
+    if (L.zone) out.push(L.zone);
+    if (sc.gruenpfeil && sc.gruenpfeil.indexOf(sc.player.from) >= 0) out.push('green_arrow');
+    if (L.crossings && L.crossings.length) out.push('crossing');
+    if (L.rails) out.push('tram');
+    if (L.busstop) out.push('bus_stop');
+    var cross = Rules.signOf(sc, Geo.rightOf(sc.player.from));
+    if (L.type !== 'roundabout' && cross !== mine && cross !== 'none') out.push(cross);
+    return out.filter(function(s,i,a){ return s !== 'none' && a.indexOf(s) === i; });
+  }
+
+  function fillLesson(sc){
+    var titlePair = { de:sc.title, en:sc.en };
+    var taskPair  = { de:sc.task,  en:sc.taskEn };
+    var merkPair  = { de:sc.merksatz, en:sc.merksatzEn };
+
+    el('brief-group').textContent   = I18N.group(sc.group) + ' · ' + I18N.t('card.level') + ' ' + sc.level;
+    el('brief-title').textContent   = I18N.pick(titlePair);
+    el('brief-en').textContent      = I18N.other(titlePair);
+    el('brief-task').textContent    = I18N.pick(taskPair);
+    el('brief-task-en').textContent = I18N.other(taskPair);
+    el('brief-merk').textContent    = I18N.pick(merkPair);
+    el('brief-merk-sub').textContent = I18N.other(merkPair);
+
+    var box = el('brief-signs');
+    clear(box);
+    signList(sc).forEach(function(t){
+      var item = make('div','signitem');
+      item.appendChild(Signs.chip(t, 52));
+      var lab = Signs.LABEL[t] || [t, ''];
+      var txt = make('div','signtxt');
+      txt.appendChild(make('div','sl-de', I18N.pick(lab)));
+      txt.appendChild(make('div','sl-en', I18N.other(lab)));
+      item.appendChild(txt);
+      box.appendChild(item);
+    });
+
+    el('side-title').textContent = I18N.pick(titlePair);
+    el('side-task').textContent  = I18N.pick(taskPair);
+    el('hud-task').textContent   = I18N.pick(taskPair);
+    var sb = el('side-signs');
+    clear(sb);
+    signList(sc).forEach(function(t){ sb.appendChild(Signs.chip(t, 40)); });
+  }
+
+  function startScenario(i){
+    state.mode = 'lesson';
+    state.scIndex = i;
+    var sc = SCENARIOS[i];
+    state.world = new Sim.World(sc);
+    input.throttle = false; input.brake = false; input.indicator = 'off';
+    look.left = false; look.right = false;
+    state.yaw = 0; state.yawTarget = 0; state.drag = null;
+    el('pedal-gas').classList.remove('down');
+    el('pedal-brake').classList.remove('down');
+    state.screen = 'brief';
+    fillLesson(sc);
+    show('screen-menu', false);
+    show('screen-play', true);
+    show('overlay-brief', true);
+    show('overlay-result', false);
+    show('overlay-ref', false);
+    show('overlay-fault', false);
+    el('btn-end-drive').classList.add('hidden');
+    applyView();
+    resize();
+    updateHud();
+    draw();
+  }
+
+  /* ---------------- free drive ---------------- */
+  function fillDriveBrief(){
+    var w = state.world, titlePair = { de:w.sc.title, en:w.sc.en };
+    el('brief-group').textContent   = I18N.t('drive.cta.button');
+    el('brief-title').textContent   = I18N.pick(titlePair);
+    el('brief-en').textContent      = I18N.other(titlePair);
+    el('brief-task').textContent    = I18N.pick(DRIVE_BRIEF.task);
+    el('brief-task-en').textContent = I18N.other(DRIVE_BRIEF.task);
+    el('brief-merk').textContent    = I18N.pick(DRIVE_BRIEF.merk);
+    el('brief-merk-sub').textContent = I18N.other(DRIVE_BRIEF.merk);
+    clear(el('brief-signs'));
+
+    el('side-title').textContent = I18N.pick(titlePair);
+    el('side-task').textContent  = I18N.pick(DRIVE_BRIEF.task);
+    clear(el('side-signs'));
+  }
+
+  function startDrive(){
+    state.mode = 'drive';
+    var seed = Math.floor(Math.random()*100000);
+    state.world = new Drive.DriveWorld({ seed:seed, cols:6, rows:5, target:1e9 });
+    input.throttle = false; input.brake = false; input.indicator = 'off';
+    look.left = false; look.right = false;
+    state.yaw = 0; state.yawTarget = 0; state.drag = null;
+    el('pedal-gas').classList.remove('down');
+    el('pedal-brake').classList.remove('down');
+    state.screen = 'brief';
+    fillDriveBrief();
+    show('screen-menu', false);
+    show('screen-play', true);
+    show('overlay-brief', true);
+    show('overlay-result', false);
+    show('overlay-ref', false);
+    show('overlay-fault', false);
+    el('btn-end-drive').classList.remove('hidden');
+    applyView();
+    resize();
+    updateHud();
+    draw();
+  }
+
+  function beginDriving(){
+    state.screen = 'play';
+    show('overlay-brief', false);
+    state.last = performance.now();
+  }
+
+  /* stopped mid-drive to explain a fault, examiner-in-the-passenger-seat style */
+  function showFaultOverlay(f){
+    var box = el('fault-card');
+    clear(box);
+    box.appendChild(faultRow(f));
+    el('btn-fault-rewind').classList.toggle('hidden', !state.world.canRewind());
+    show('overlay-fault', true);
+  }
+  /* one explained mistake: what, which law, why it matters, what to do */
+  function faultRow(f){
+    var def = Rules.FAULTS[f.id];
+    var row = make('div','fault ' + def.sev);
+    row.appendChild(make('div','f-plate', def.pts ? '−' + def.pts : 'i'));
+    var body = make('div','f-body');
+    body.appendChild(make('div','f-title', I18N.pick(def.title)));
+    body.appendChild(make('div','f-en', I18N.other(def.title) + (def.law ? '  ·  ' + def.law : '')));
+    if (f.detail) body.appendChild(make('div','f-detail', I18N.pick(f.detail)));
+    body.appendChild(make('div','f-why',   I18N.pick(def.why)));
+    body.appendChild(make('div','f-whyen', I18N.other(def.why)));
+    var r = Rules.REASON_TEXT[f.reason];
+    if (r && I18N.pick(r.text)){
+      var rb = make('div','f-rule');
+      rb.appendChild(make('strong', null, I18N.pick(r.title) + ': '));
+      rb.appendChild(document.createTextNode(I18N.pick(r.text)));
+      rb.appendChild(make('div','f-ruleen', I18N.other(r.text)));
+      body.appendChild(rb);
+    }
+    body.appendChild(make('div','f-tip', I18N.t('res.tip') + I18N.pick(def.tip)));
+    row.appendChild(body);
+    return row;
+  }
+  function resumeDrive(){
+    show('overlay-fault', false);
+    if (state.world) state.world.resume();
+  }
+  /* back to a few seconds before the mistake, frozen until you press gas */
+  function rewindDrive(){
+    if (!state.world || !state.world.rewind()) return;
+    show('overlay-fault', false);
+    input.throttle = false; input.brake = false;
+    input.indicator = state.world.player.indicator || 'off';
+    el('pedal-gas').classList.remove('down');
+    el('pedal-brake').classList.remove('down');
+    updateHud();
+    draw();
+  }
+
+  function driveResult(){
+    if (!state.world) return;
+    state.screen = 'result';
+    show('overlay-fault', false);
+    var w = state.world, rep = w.report();
+    var majors = rep.faults.filter(function(f){ return f.def.sev === 'major'; }).length;
+
+    el('res-score').textContent = rep.score;
+    var verdict = el('res-verdict');
+    verdict.textContent = I18N.t('drive.result.title');
+    verdict.className = 'verdict ' + (majors ? 'bad' : 'ok');
+    el('res-sub').textContent = I18N.t('drive.result.sub', { a:rep.cleared });
+
+    var list = el('res-faults');
+    clear(list);
+    if (rep.faults.length){
+      list.appendChild(make('div','sub', I18N.t('drive.result.explained')));
+      rep.faults.forEach(function(f){ list.appendChild(faultRow(f)); });
+    } else {
+      var row0 = make('div','fault ok');
+      row0.appendChild(make('div','f-plate','0'));
+      var b0 = make('div','f-body');
+      b0.appendChild(make('div','f-title', I18N.t('res.noFaults')));
+      b0.appendChild(make('div','f-why',   I18N.t('res.noFaultsWhy')));
+      row0.appendChild(b0);
+      list.appendChild(row0);
+    }
+    if (rep.fixed.length){
+      list.appendChild(make('div','sub', I18N.t('drive.result.fixed', { n:rep.fixed.length })));
+      rep.fixed.forEach(function(f){
+        var r = faultRow(f);
+        r.classList.add('fixed');
+        r.querySelector('.f-plate').textContent = '↺';
+        list.appendChild(r);
+      });
+    }
+    clear(el('res-points'));
+
+    refreshResultLabels();
+    show('overlay-result', true);
+    draw();
+  }
+  function endDrive(){
+    if (state.mode === 'drive' && state.world) driveResult();
+  }
+
+  /* ---------------- view ---------------- */
+  function applyView(){
+    var pov = state.view === 'pov';
+    el('btn-view').textContent = I18N.t(pov ? 'view.toTop' : 'view.toPov');
+    mini.classList.toggle('hidden', !pov);
+    el('look-l').classList.toggle('hidden', !pov);
+    el('look-r').classList.toggle('hidden', !pov);
+  }
+  function toggleView(){
+    state.view = state.view === 'pov' ? 'top' : 'pov';
+    save(VIEW, state.view);
+    applyView();
+    draw();
+  }
+
+  /* ---------------- loop ---------------- */
+  function tick(now){
+    requestAnimationFrame(tick);
+    var dt = Math.min(0.05, (now - state.last)/1000);
+    state.last = now;
+    if (state.screen !== 'play' || !state.world) return;
+
+    /* head movement: keys, buttons or a drag on the road */
+    if (state.drag === null){
+      var t = 0;
+      if (look.left)  t -= MAX_YAW;
+      if (look.right) t += MAX_YAW;
+      state.yawTarget = t;
+    }
+    state.yaw += (state.yawTarget - state.yaw) * Math.min(1, dt*8);
+    if (Math.abs(state.yaw - state.yawTarget) < 0.002) state.yaw = state.yawTarget;
+
+    state.world.update(dt, input);
+    updateHud();
+    draw();
+
+    if (state.mode === 'drive'){
+      var fo = el('overlay-fault'), open = !fo.classList.contains('hidden');
+      if (state.world.pending && !open) showFaultOverlay(state.world.pending);
+      else if (!state.world.pending && open) show('overlay-fault', false);
+      if (state.world.state !== 'run' && state.world.endTimer > 0.9) driveResult();
+    } else if (state.world.state !== 'run' && state.world.endTimer > 0.9){
+      finishRun();
+    }
+  }
+
+  function draw(){
+    if (!state.world || !W || !H) return;
+    if (state.view === 'pov' && state.screen !== 'brief'){
+      POV.frame(ctx, W, H, state.world, state.yaw);
+      drawMinimap();
+    } else {
+      Render.frame(ctx, W, H, state.world, state.screen === 'brief');
+      if (state.view === 'pov') drawMinimap();
+    }
+  }
+  function drawMinimap(){
+    if (mini.classList.contains('hidden')) return;
+    var s = mini.width;
+    Render.frame(mctx, s, s, state.world, true);
+  }
+
+  /* ---------------- HUD ---------------- */
+  function updateHud(){
+    var w = state.world, p = w.player;
+    var v = Math.round(toKmh(p.v));
+    var sp = el('hud-speed');
+    sp.textContent = v;
+    sp.className = v > w.sc.limit + 4 ? 'over' : '';
+    el('hud-limit').textContent  = w.sc.limit;
+    if (state.mode === 'drive'){
+      el('hud-time-label').textContent = I18N.t('hud.cleared');
+      el('hud-time').textContent = w.cleared;
+      var instr = w.instruction();
+      el('hud-task').textContent = instr ? I18N.pick(instr) : '';
+    } else {
+      el('hud-time-label').textContent = I18N.t('hud.time');
+      el('hud-time').textContent = Math.max(0, Math.ceil((w.sc.timeLimit || 45) - w.t));
+    }
+    el('hud-faults').textContent = w.faults.length;
+
+    var blink = (w.t*2.2) % 1 < 0.55;
+    el('ind-l').classList.toggle('on', p.indicator === 'left'  && blink);
+    el('ind-r').classList.toggle('on', p.indicator === 'right' && blink);
+    el('look-l').classList.toggle('on', state.yaw < -0.05);
+    el('look-r').classList.toggle('on', state.yaw >  0.05);
+
+    var h = state.hints ? I18N.pick(w.hint()) : '';
+    /* after a rewind, always say what you are retrying and how to get it right */
+    if (w.hold){
+      var fd = Rules.FAULTS[w.hold.fault.id];
+      h = I18N.t('drive.hold.retrying', { what:I18N.pick(fd.title) }) + '\n' +
+          I18N.t('drive.hold', { s:w.hold.back, tip:I18N.pick(fd.tip) });
+    }
+    var hb = el('hud-hint');
+    if (h !== hb.dataset.msg){
+      hb.textContent = h || '';
+      hb.dataset.msg = h || '';
+    }
+    hb.classList.toggle('hidden', !h);
+  }
+
+  /* ---------------- debrief ---------------- */
+  /* the retry/list buttons are shared between a lesson's debrief and a
+     drive's summary; keep their wording matched to whichever is showing,
+     including across a language toggle while the result screen is up */
+  function refreshResultLabels(){
+    if (state.mode === 'drive'){
+      el('btn-retry').querySelector('span').textContent = I18N.t('drive.result.retry');
+      el('btn-retry').onclick = startDrive;
+      el('btn-next').classList.add('hidden');
+      el('btn-list').textContent = I18N.t('drive.result.list');
+    } else {
+      el('btn-retry').querySelector('span').textContent = I18N.t('res.again');
+      el('btn-retry').onclick = function(){ startScenario(state.scIndex); };
+      el('btn-next').classList.toggle('hidden', state.scIndex >= SCENARIOS.length - 1);
+      el('btn-list').textContent = I18N.t('res.list');
+    }
+  }
+
+  function finishRun(){
+    if (state.screen === 'result') return;
+    state.screen = 'result';
+    var w = state.world, sc = w.sc, rep = w.report();
+
+    var prev = progress[sc.id];
+    progress[sc.id] = {
+      best:   Math.max(rep.score, prev ? prev.best : 0),
+      passed: rep.passed || !!(prev && prev.passed)
+    };
+    save(STORE, progress);
+
+    el('res-score').textContent = rep.score;
+    var verdict = el('res-verdict');
+    verdict.textContent = I18N.t(rep.passed ? 'res.passed' : 'res.failed');
+    verdict.className = 'verdict ' + (rep.passed ? 'ok' : 'bad');
+    el('res-sub').textContent = rep.passed
+      ? I18N.t(rep.faults.length ? 'res.subMinor' : 'res.subClean')
+      : I18N.t('res.subFail');
+
+    var list = el('res-faults');
+    clear(list);
+    if (!rep.faults.length){
+      var row0 = make('div','fault ok');
+      row0.appendChild(make('div','f-plate','0'));
+      var b0 = make('div','f-body');
+      b0.appendChild(make('div','f-title', I18N.t('res.noFaults')));
+      b0.appendChild(make('div','f-why',   I18N.t('res.noFaultsWhy')));
+      row0.appendChild(b0);
+      list.appendChild(row0);
+    }
+    rep.faults.forEach(function(f){
+      var d = f.def;
+      var row = make('div','fault ' + d.sev);
+      row.appendChild(make('div','f-plate', d.pts ? '−' + d.pts : 'i'));
+
+      var body = make('div','f-body');
+      body.appendChild(make('div','f-title', I18N.pick(d.title)));
+      body.appendChild(make('div','f-en',
+        I18N.other(d.title) + (d.law ? '  ·  ' + d.law : '')));
+      if (f.detail) body.appendChild(make('div','f-detail', I18N.pick(f.detail)));
+      body.appendChild(make('div','f-why',   I18N.pick(d.why)));
+      body.appendChild(make('div','f-whyen', I18N.other(d.why)));
+
+      var r = Rules.REASON_TEXT[f.reason];
+      if (r && I18N.pick(r.text)){
+        var rb = make('div','f-rule');
+        rb.appendChild(make('strong', null, I18N.pick(r.title) + ': '));
+        rb.appendChild(document.createTextNode(I18N.pick(r.text)));
+        rb.appendChild(make('div','f-ruleen', I18N.other(r.text)));
+        body.appendChild(rb);
+      }
+      body.appendChild(make('div','f-tip', I18N.t('res.tip') + I18N.pick(d.tip)));
+      row.appendChild(body);
+      list.appendChild(row);
+    });
+
+    var pts = el('res-points');
+    clear(pts);
+    pts.appendChild(make('h4','eyebrow', I18N.t('res.about')));
+    sc.points.forEach(function(p){
+      var li = make('div','point');
+      bilingual(li, p, 'p-de', 'p-en');
+      pts.appendChild(li);
+    });
+
+    refreshResultLabels();
+    show('overlay-result', true);
+    draw();
+    buildMenu();
+  }
+
+  /* ---------------- reference sheet ---------------- */
+  var REF_ROWS = [
+    ['none', { de:'Rechts vor links', en:'Right before left' },
+      { de:'Keine Schilder, keine Ampel: wer von rechts kommt, fährt zuerst. Auch dann, wenn der andere abbiegt.',
+        en:'No signs, no lights: whoever comes from the right goes first, even if they are turning.' }],
+    ['yield', { de:'Vorfahrt gewähren (Z 205)', en:'Give way (sign 205)' },
+      { de:'Du musst warten. Anhalten nur, wenn nötig – aber der Bevorrechtigte darf nicht bremsen müssen.',
+        en:'You must wait. Stop only if you need to, but never make the other driver brake.' }],
+    ['stop', { de:'Stop (Z 206)', en:'Stop (sign 206)' },
+      { de:'Immer vollständig anhalten an der Haltelinie, auch bei freier Strasse. Danach vortasten.',
+        en:'Always come to a complete stop at the line, even on an empty road. Then edge forward.' }],
+    ['priority', { de:'Vorfahrtstrasse (Z 306)', en:'Priority road (sign 306)' },
+      { de:'Du hast Vorfahrt, solange du der Strasse folgst. Beim Abbiegen gelten wieder die Abbiegeregeln.',
+        en:'You have priority as long as you follow the road. Turning off, the turning rules apply again.' }],
+    ['crossing', { de:'Fussgängerüberweg (Z 350)', en:'Zebra crossing (sign 350)' },
+      { de:'Fussgängern, die erkennbar hinüber wollen, das Überqueren ermöglichen. Ausserdem Überhol- und Halteverbot.',
+        en:'Let pedestrians who clearly want to cross go. No overtaking and no stopping either.' }],
+    ['roundabout', { de:'Kreisverkehr (Z 215 + 205)', en:'Roundabout (signs 215 + 205)' },
+      { de:'Der Verkehr im Kreisel hat Vorfahrt. Rein ohne Blinker, raus mit rechts.',
+        en:'Traffic in the circle has priority. No indicator going in, right indicator coming out.' }],
+    ['green_arrow', { de:'Grünpfeil (Z 720)', en:'Green arrow (sign 720)' },
+      { de:'Rechtsabbiegen bei Rot nur nach vollständigem Halt und ohne jede Behinderung.',
+        en:'Right turn on red only after a full stop and only if you obstruct nobody.' }],
+    ['tram', { de:'Schienenfahrzeuge', en:'Rail vehicles' },
+      { de:'An ungeregelten Kreuzungen haben Bahnen Vorrang, auch von links. Schilder und Ampeln gehen aber vor.',
+        en:'Trams go first at unregulated junctions, even from the left. Signs and lights still override that.' }],
+    ['bus_stop', { de:'Linienbus (§ 20 StVO)', en:'Buses (§ 20 StVO)' },
+      { de:'Blinkt der Bus an der Haltestelle, hat er Vorrang beim Abfahren. Bus mit Warnblinklicht: nur Schrittgeschwindigkeit vorbei.',
+        en:'A bus indicating at a stop has priority pulling out. Passing one with hazard lights on: walking pace only.' }],
+    ['play_street', { de:'Verkehrsberuhigter Bereich (Z 325)', en:'Home zone (sign 325)' },
+      { de:'Schrittgeschwindigkeit, Fussgänger dürfen die ganze Strasse nutzen, beim Verlassen allen Vorfahrt gewähren.',
+        en:'Walking pace, pedestrians may use the whole road, and you give way to everyone when leaving.' }],
+    ['zone30', { de:'Zone 30', en:'Zone 30' },
+      { de:'Höchstens 30 km/h, meist ohne Vorfahrtschilder – also rechts vor links.',
+        en:'30 km/h maximum, and usually no priority signs, so rechts vor links applies.' }]
+  ];
+
+  function buildReference(){
+    var box = el('ref-body');
+    if (box.childElementCount) return;
+    var sec = make('div','ref-order');
+    sec.appendChild(make('h4', null, I18N.t('ref.orderTitle')));
+    [['1','ref.s1'], ['2','ref.s2'], ['3','ref.s3'], ['+','ref.s4']].forEach(function(s){
+      var row = make('div','ref-step');
+      row.appendChild(make('i', null, s[0]));
+      row.appendChild(make('div', null, I18N.t(s[1])));
+      sec.appendChild(row);
+    });
+    box.appendChild(sec);
+
+    REF_ROWS.forEach(function(r){
+      var row = make('div','ref-row');
+      var c = make('div','ref-sign');
+      c.appendChild(Signs.chip(r[0], 50));
+      row.appendChild(c);
+      var t = make('div','ref-txt');
+      t.appendChild(make('div','ref-title', I18N.pick(r[1])));
+      t.appendChild(make('div','ref-de', I18N.pick(r[2])));
+      t.appendChild(make('div','ref-en', I18N.other(r[2])));
+      row.appendChild(t);
+      box.appendChild(row);
+    });
+  }
+
+  /* ---------------- input ---------------- */
+  function setIndicator(dir){
+    input.indicator = (input.indicator === dir) ? 'off' : dir;
+    if (state.world) updateHud();
+  }
+  function setHints(on){
+    state.hints = on;
+    el('btn-hints').classList.toggle('off', !on);
+  }
+
+  window.addEventListener('keydown', function(e){
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var k = e.key.toLowerCase();
+    if (k === ' ' || k.indexOf('arrow') === 0) e.preventDefault();
+
+    if (state.screen === 'brief' && (k === ' ' || k === 'enter')){ beginDriving(); return; }
+    if (state.screen === 'result'){
+      if (k === 'r' || k === ' '){
+        if (state.mode === 'drive') startDrive(); else startScenario(state.scIndex);
+        return;
+      }
+      if (k === 'enter' && state.mode !== 'drive' && state.scIndex < SCENARIOS.length - 1){
+        startScenario(state.scIndex + 1); return;
+      }
+    }
+    if (k === 'h'){ setHints(!state.hints); return; }
+    if (k === 'v'){ toggleView(); return; }
+    if (k === 'escape'){ toMenu(); return; }
+    if (state.screen !== 'play') return;
+
+    /* the examiner has stopped the car to explain something: only the
+       Continue key does anything until you acknowledge it */
+    if (state.mode === 'drive' && !el('overlay-fault').classList.contains('hidden')){
+      if (k === ' ' || k === 'enter' || k === 'backspace'){
+        if (state.world.canRewind()) rewindDrive(); else resumeDrive();
+      }
+      if (k === 'c') resumeDrive();
+      return;
+    }
+
+    /* the Space that chose "rewind" must not auto-repeat into a brake press
+       and set the car off before you are ready */
+    if (e.repeat && k === ' ' && state.world && state.world.hold) return;
+    if (k === 'w' || k === 'arrowup')   { input.throttle = true; el('pedal-gas').classList.add('down'); }
+    if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = true; el('pedal-brake').classList.add('down'); }
+    if (k === 'q' || k === 'arrowleft')  look.left = true;
+    if (k === 'e' || k === 'arrowright') look.right = true;
+    if (k === 'a') setIndicator('left');
+    if (k === 'd') setIndicator('right');
+    if (k === 'x') input.indicator = 'off';
+    if (k === 'r'){ if (state.mode === 'drive') startDrive(); else startScenario(state.scIndex); }
+  });
+  window.addEventListener('keyup', function(e){
+    var k = e.key.toLowerCase();
+    if (k === 'w' || k === 'arrowup')   { input.throttle = false; el('pedal-gas').classList.remove('down'); }
+    if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = false; el('pedal-brake').classList.remove('down'); }
+    if (k === 'q' || k === 'arrowleft')  look.left = false;
+    if (k === 'e' || k === 'arrowright') look.right = false;
+  });
+  window.addEventListener('blur', function(){
+    input.throttle = false; input.brake = false;
+    look.left = false; look.right = false;
+    el('pedal-gas').classList.remove('down');
+    el('pedal-brake').classList.remove('down');
+  });
+
+  /* press-and-hold buttons (mouse, touch and pen in one path) */
+  function hold(id, onDown, onUp){
+    var n = el(id);
+    function down(e){
+      e.preventDefault();
+      if (n.setPointerCapture && e.pointerId !== undefined){
+        try { n.setPointerCapture(e.pointerId); } catch(err){}
+      }
+      onDown(); n.classList.add('down');
+    }
+    function up(e){ if (e) e.preventDefault(); onUp(); n.classList.remove('down'); }
+    n.addEventListener('pointerdown', down);
+    n.addEventListener('pointerup', up);
+    n.addEventListener('pointercancel', up);
+    n.addEventListener('lostpointercapture', up);
+    n.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+  }
+
+  /* drag across the road to look around, like turning your head */
+  function initDragLook(){
+    canvas.addEventListener('pointerdown', function(e){
+      if (state.screen !== 'play' || state.view !== 'pov') return;
+      state.drag = { id:e.pointerId, x:e.clientX, yaw:state.yawTarget };
+      try { canvas.setPointerCapture(e.pointerId); } catch(err){}
+    });
+    canvas.addEventListener('pointermove', function(e){
+      if (!state.drag || e.pointerId !== state.drag.id) return;
+      var dx = e.clientX - state.drag.x;
+      state.yawTarget = Geo.clamp(state.drag.yaw - dx/Math.max(160, W*0.42), -MAX_YAW, MAX_YAW);
+    });
+    function release(e){
+      if (!state.drag || (e && e.pointerId !== state.drag.id)) return;
+      state.drag = null;
+      state.yawTarget = 0;
+    }
+    canvas.addEventListener('pointerup', release);
+    canvas.addEventListener('pointercancel', release);
+    canvas.addEventListener('lostpointercapture', release);
+  }
+
+  /* ---------------- navigation ---------------- */
+  function toMenu(){
+    state.screen = 'menu';
+    state.world = null;
+    show('screen-play', false);
+    show('screen-menu', true);
+    show('overlay-ref', false);
+    buildMenu();
+  }
+
+  function init(){
+    I18N.set(load(LANG, 'en'));
+    state.view = load(VIEW, 'pov') === 'top' ? 'top' : 'pov';
+    applyTheme(load(THEME, null));
+    applyLang();
+    applyView();
+
+    hold('pedal-gas',   function(){ input.throttle = true; },  function(){ input.throttle = false; });
+    hold('pedal-brake', function(){ input.brake = true; },     function(){ input.brake = false; });
+    hold('look-l',      function(){ look.left = true; },       function(){ look.left = false; });
+    hold('look-r',      function(){ look.right = true; },      function(){ look.right = false; });
+    initDragLook();
+
+    el('btn-start').onclick = beginDriving;
+    el('btn-retry').onclick = function(){ startScenario(state.scIndex); };
+    el('btn-next').onclick  = function(){ startScenario(Math.min(SCENARIOS.length-1, state.scIndex+1)); };
+    el('btn-list').onclick  = toMenu;
+    el('btn-menu').onclick  = toMenu;
+    el('btn-quit').onclick  = toMenu;
+    el('btn-drive').onclick = startDrive;
+    el('btn-fault-continue').onclick = resumeDrive;
+    el('btn-fault-rewind').onclick = rewindDrive;
+    el('btn-end-drive').onclick = endDrive;
+    el('btn-view').onclick  = toggleView;
+    el('btn-ref').onclick   = function(){ buildReference(); show('overlay-ref', true); };
+    el('btn-ref-close').onclick = function(){ show('overlay-ref', false); };
+    el('btn-hints').onclick = function(){ setHints(!state.hints); };
+    el('ind-l').onclick = function(){ setIndicator('left'); };
+    el('ind-r').onclick = function(){ setIndicator('right'); };
+    el('btn-lang').onclick = function(){
+      save(LANG, I18N.toggle());
+      applyLang();
+    };
+    el('btn-theme').onclick = function(){
+      var choice = isDark() ? 'light' : 'dark';
+      save(THEME, choice);
+      applyTheme(choice);
+    };
+    el('btn-reset').onclick = function(){
+      if (confirm(I18N.t('menu.confirmReset'))){
+        progress = {}; save(STORE, progress); buildMenu();
+      }
+    };
+
+    if (window.matchMedia){
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      var onChange = function(){ if (!load(THEME, null)) applyTheme(null); };
+      if (mq.addEventListener) mq.addEventListener('change', onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    }
+    window.addEventListener('resize', resize);
+    window.addEventListener('orientationchange', function(){ setTimeout(resize, 250); });
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+
+    resize();
+    requestAnimationFrame(tick);
+  }
+
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
