@@ -88,6 +88,7 @@
     el('btn-theme').textContent = I18N.t(isDark() ? 'theme.day' : 'theme.night');
     Render.syncTheme();
     POV.syncTheme();
+    if (typeof GL3D !== 'undefined') GL3D.syncTheme();
     if (state.world) draw();
   }
 
@@ -445,10 +446,21 @@
 
   function draw(){
     if (!state.world || !W || !H) return;
+    var gl = el('gl');
     if (state.view === 'pov' && state.screen !== 'brief'){
-      POV.frame(ctx, W, H, state.world, state.yaw);
+      /* real 3D when the browser can do it; the flat projection otherwise */
+      var in3d = typeof GL3D !== 'undefined' && GL3D.available();
+      gl.classList.toggle('hidden', !in3d);
+      if (in3d){
+        ctx.save();
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+        GL3D.frame(state.world, state.yaw, W, H);
+      } else POV.frame(ctx, W, H, state.world, state.yaw);
       drawMinimap();
     } else {
+      gl.classList.add('hidden');
       Render.frame(ctx, W, H, state.world, state.screen === 'brief');
       if (state.view === 'pov') drawMinimap();
     }

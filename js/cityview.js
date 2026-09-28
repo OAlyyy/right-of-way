@@ -153,7 +153,8 @@ var CityView = (function(){
         });
         if (Math.round((t - from)/step) % 2 === 0){
           var lo = KERB + 6;
-          lamps.push({ x:isCol ? line - lo : t + 40, y:isCol ? t + 40 : line - lo });
+          /* on the kerb, its arm reaching out over the carriageway */
+          lamps.push({ x:isCol ? line - lo : t + 40, y:isCol ? t + 40 : line - lo, col:isCol });
         }
       }
       void n;

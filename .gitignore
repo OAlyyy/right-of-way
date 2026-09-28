@@ -1,0 +1,3 @@
+# full-size texture downloads; tools/fetch-assets.js fetches them again,
+# and only the 512 px copies in assets/tex are used by the game
+assets/src/

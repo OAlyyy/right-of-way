@@ -206,7 +206,30 @@ test/longhalt-check.js      confirms a long wait at a busy crossing always ends
 test/drive-policy.js        the rule-following driver shared by the tests above
 ```
 
-### The driver view
+### The 3D view
+
+`js/gl.js` draws the driver's view in real 3D with three.js (WebGL), from
+the same simulation and the same town layout (`js/cityview.js`) as the 2D
+views: photo-scanned asphalt, paving, track gravel and plaster, houses with
+framed windows, doors and shopfronts, tiled roofs, trees, street lamps,
+sun shadows by day, lamp light and headlights at night, and cars with
+clear-coat paint, glass, rims and Frankfurt number plates. You sit in the
+car: dashboard, A-pillars and bonnet included. If WebGL is unavailable the
+game falls back to the 2D projection in `js/pov.js`, which the tests use.
+
+Third-party files, all in the repo so the game runs offline:
+
+| | |
+|---|---|
+| `js/vendor/three.min.js`, `RoomEnvironment.js`, `Sky.js` | three.js r147, MIT (`js/vendor/THREE-LICENSE.txt`) |
+| `assets/tex/*.jpg` → `js/vendor/assets.js` | textures from [Poly Haven](https://polyhaven.com), CC0 |
+
+To refresh them: `node tools/fetch-assets.js`, then
+`powershell -File tools/shrink-textures.ps1`, then `node tools/pack-assets.js`.
+The textures travel as data URIs inside a script because WebGL refuses
+images loaded from `file://`.
+
+### The 2D driver view
 
 `js/pov.js` is a pinhole camera at eye height (1.20 m), projecting the same
 world the map view draws. Road, markings and crossings are painted as ground

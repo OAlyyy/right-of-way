@@ -62,6 +62,8 @@
   <div class="play-wrap">
 
     <div id="canvas-wrap">
+      <!-- the 3D driver's view, under the 2D canvas (which then stays clear) -->
+      <canvas id="gl" class="hidden"></canvas>
       <canvas id="game"></canvas>
 
       <div id="hud">
@@ -217,6 +219,10 @@
   </div>
 </div>
 
+<script src="js/vendor/three.min.js"></script>
+<script src="js/vendor/RoomEnvironment.js"></script>
+<script src="js/vendor/Sky.js"></script>
+<script src="js/vendor/assets.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/rules.js"></script>
@@ -228,6 +234,7 @@
 <script src="js/cityview.js"></script>
 <script src="js/render.js"></script>
 <script src="js/pov.js"></script>
+<script src="js/gl.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

@@ -296,7 +296,9 @@ h1 em{ font-style:normal; color:var(--accent-deep); }
   position:relative; flex:1 1 auto; min-width:0;
   background:var(--sunk); overflow:hidden;
 }
-#game{ display:block; width:100%; height:100%; touch-action:none; }
+#game{ display:block; position:relative; width:100%; height:100%; touch-action:none; }
+#gl{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+#gl.hidden{ display:none; }
 
 /* ---- instruments ---- */
 #hud{
