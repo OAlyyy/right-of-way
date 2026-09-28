@@ -40,6 +40,7 @@
       </div>
       <div class="drive-cta-btns">
         <button id="btn-drive" class="primary" type="button" data-t="drive.cta.button"></button>
+        <button id="btn-exam" class="primary alt" type="button" data-t="exam.button"></button>
         <button id="btn-drive-random" class="ghost small" type="button" data-t="drive.cta.random"></button>
       </div>
     </div>
@@ -103,6 +104,11 @@
           <button id="look-r" class="ind look" type="button" title="E">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l10 8-10 8v-5H4V9h6z"/></svg>
             <small data-t="look.label">LOOK</small>
+          </button>
+          <!-- a glance in the rear-view mirror: the examiner watches for it -->
+          <button id="look-m" class="ind look" type="button" title="M">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="8" rx="3"/></svg>
+            <small data-t="mirror.label">MIRROR</small>
           </button>
         </div>
         <div class="cluster">
@@ -192,6 +198,7 @@
           <tr><td><kbd>W</kbd> <kbd>&uarr;</kbd></td><td data-t="ctrl.throttle"></td></tr>
           <tr><td><kbd>S</kbd> <kbd>&darr;</kbd></td><td data-t="ctrl.brake"></td></tr>
           <tr><td><kbd>Q</kbd> <kbd>E</kbd></td><td data-t="ctrl.look"></td></tr>
+          <tr><td><kbd>M</kbd></td><td data-t="ctrl.mirror"></td></tr>
           <tr><td><kbd>A</kbd> <kbd>D</kbd></td><td data-t="ctrl.indicators"></td></tr>
           <tr><td><kbd>V</kbd></td><td data-t="ctrl.view"></td></tr>
           <tr><td><kbd>R</kbd></td><td data-t="ctrl.restart"></td></tr>

@@ -15,6 +15,14 @@ var City = (function(){
   var ENTRY   = 250;               // where a junction's own geometry starts
   var LINK    = SPACING - 2*ENTRY; // straight bit between two junctions
 
+  /* Across the mouth of every arm, from the corner outwards, the way a
+     German street is laid out: the pedestrians' crossing, the cyclists'
+     crossing (where a cycle path runs alongside), then the stop line.
+     Distances from the junction centre along the arm. */
+  var CW    = { in:55, out:73, mid:64 };   // pedestrian crossing band (1.5 m)
+  var BIKE  = { off:79, half:6, V:18 };    // cycle path: centre off the road's centre line
+  var HOLD  = CFG.BOX + 49;                // where a car's front stops: behind both
+
   /* deterministic RNG so a seed always rebuilds the same town */
   function rng(seed){
     var x = seed || 12345;
@@ -116,7 +124,7 @@ var City = (function(){
     mainCol:2, mainRow:1,
     start:{ c:2, r:1, from:'N' },                // heading south into Weißer Stein
     stops:{ '4,1':'stop' },                      // one real Stop sign on the way
-    zebras:{},                                   // none until free drive has pedestrians
+    zebras:{ '1,3':'W', '4,2':'N', '0,3':'E' },  // Zeichen 350 on quiet side streets
     gruenpfeil:{ '2,3':['W'] },
     places:{ '2,1':'Weißer Stein', '2,2':'Lindenbaum' }
   };
@@ -128,7 +136,8 @@ var City = (function(){
     side:'E',
     track:{ S:78, N:114 },           // track centre per direction of travel
     bed:[58, 134],                   // gravel bed, between the two kerbs
-    carHold:152,                     // cars from the east wait before the tracks
+    bikeOff:146,                     // the cycle path runs on beyond the bed
+    carHold:164,                     // cars from the east wait before path and tracks
     tramHold:CFG.BOX + 22,           // trams wait before the road
     TRAM_L:300, TRAM_W:32            // one 25 m Stadtbahn car
   };
@@ -251,6 +260,21 @@ var City = (function(){
     }
     /* a stable look for every block of houses, from its own seed */
     this.blockSeed = (opts.seed || 7) * 131 + 17;
+
+    /* One-way cycle paths along both sides of the main roads, riding with
+       the traffic beside them. `from` is the arm a cyclist comes in on,
+       `off` how far to the right of their direction of travel the path
+       lies. Beside the U-Bahn the path runs on beyond the track bed. */
+    this.bikeLanes = [];
+    var self = this;
+    [['N', true], ['S', true], ['W', false], ['E', false]].forEach(function(l){
+      var isCol = l[1];
+      var index = isCol ? priCol : priRow;
+      if (index < 0) return;
+      var off = BIKE.off;
+      if (isCol && index === self.railCol && l[0] === 'S') off = RAIL.bikeOff;    // northbound, east side
+      self.bikeLanes.push({ id:self.bikeLanes.length, from:l[0], col:isCol, index:index, off:off });
+    });
     this.nodeAt = function(cc, rr){
       if (cc < 0 || rr < 0 || cc >= this.cols || rr >= this.rows) return null;
       return this.nodes[rr*this.cols + cc];
@@ -332,7 +356,7 @@ var City = (function(){
          waiting at it stands clear of the traffic crossing in front */
       var holdR = n.layout.type === 'roundabout' ? CFG.RING + 76
                 : (n.rail && m.step.from === n.rail.side) ? n.rail.carHold   // before the tracks
-                : CFG.BOX + 34;
+                : Math.hypot(HOLD, CFG.HALF);                    // behind the crossings
       var enterS = path.cum[m.startIdx];
       var exitS  = path.cum[m.endIdx];
       /* the give-way line: first point inside holdR, searched only
@@ -389,11 +413,55 @@ var City = (function(){
     return (RAIL_CONFLICT[key] = c ? { st:c.sa, sc:c.sb } : null);
   }
 
+  /* ---------------- cycle paths ---------------- */
+  /* A cyclist's run along one side of a main road, with the landmarks for
+     every junction on the way - the same shape as a car's or a train's,
+     so the rule engine treats them all alike. The stop line is short of
+     the side street the path crosses. */
+  function bikeFrame(from, off){
+    var dir = Geo.mul(Geo.ARM_VEC[from], -1), right = Geo.rot90cw(dir);
+    return { dir:dir, right:right, off:off };
+  }
+  Map.prototype.bikeRoute = function(lane){
+    var nodes = [], i;
+    var n = lane.col ? this.rows : this.cols;
+    for (i = 0; i < n; i++) nodes.push(lane.col ? this.nodeAt(lane.index, i) : this.nodeAt(i, lane.index));
+    /* in the direction of travel */
+    var f = bikeFrame(lane.from, lane.off);
+    nodes.sort(function(a, b){ return (a.x*f.dir.x + a.y*f.dir.y) - (b.x*f.dir.x + b.y*f.dir.y); });
+    var run = ENTRY + LINK*0.8;
+    var a = nodes[0], b = nodes[nodes.length - 1];
+    function at(node, t){ return { x:node.x + f.dir.x*t + f.right.x*f.off, y:node.y + f.dir.y*t + f.right.y*f.off }; }
+    var p0 = at(a, -run), p1 = at(b, run);
+    var path = new Geo.Path([p0, p1]);
+    function sOf(node, t){ var q = at(node, t); return Math.hypot(q.x - p0.x, q.y - p0.y); }
+    var steps = nodes.map(function(node){
+      return { node:node, from:lane.from, to:Geo.opposite(lane.from),
+               enterS:sOf(node, -ENTRY), exitS:sOf(node, ENTRY),
+               junctionS:sOf(node, -(CFG.BOX + 14)) };
+    });
+    return { path:path, steps:steps };
+  };
+  /* where a cyclist on this path and a car making from->to meet, both
+     measured from the start of the junction's geometry */
+  var BIKE_CONFLICT = {};
+  function bikeConflict(from, off, cfrom, cto){
+    var key = from + off + '|' + cfrom + cto;
+    if (key in BIKE_CONFLICT) return BIKE_CONFLICT[key];
+    var f = bikeFrame(from, off);
+    var bike = new Geo.Path([
+      { x:-f.dir.x*ENTRY + f.right.x*off, y:-f.dir.y*ENTRY + f.right.y*off },
+      { x: f.dir.x*ENTRY + f.right.x*off, y: f.dir.y*ENTRY + f.right.y*off }]);
+    var car = new Geo.Path(junctionPiece(cfrom, cto, 'cross'));
+    var c = Geo.conflictOf(bike, car, CFG.CAR_W/2 + BIKE.half + 10);
+    return (BIKE_CONFLICT[key] = c ? { sb:c.sa, sc:c.sb } : null);
+  }
+
   return {
-    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK, RAIL:RAIL,
+    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK, RAIL:RAIL, CW:CW, BIKE:BIKE, HOLD:HOLD,
     Map:Map, junctionPiece:junctionPiece,
     localConflict:localConflict, buildConflictTable:buildConflictTable,
-    railConflict:railConflict,
+    railConflict:railConflict, bikeConflict:bikeConflict,
     rng:rng
   };
 })();

@@ -73,10 +73,23 @@ var Rules = (function(){
     /* A train beside the road coming the same way as a car is not queueing
        behind it: the car turning off across the tracks must let it pass. */
     var oneTram = (a.kind === 'tram') !== (b.kind === 'tram');
-    if (a.fromArm === b.fromArm && !oneTram)
+    var oneBike = (a.kind === 'bike' && !!a.lane) !== (b.kind === 'bike' && !!b.lane);
+    if (a.fromArm === b.fromArm && !oneTram && !oneBike)
       return { who:'follow', reason:'same_arm' };
 
     var ra = rankOf(sc, a, t), rb = rankOf(sc, b, t);
+
+    /* A cyclist riding straight on along a cycle path has priority over
+       anyone turning across it - from behind them (turning right) or
+       towards them (turning left) - whenever the two share the same
+       green or the same road: Sec. 9 (3) StVO. */
+    if (oneBike){
+      var bk = (a.kind === 'bike') ? a : b, car = bk === a ? b : a;
+      var sameRoad = car.fromArm === bk.fromArm || car.fromArm === Geo.opposite(bk.fromArm);
+      var rc = bk === a ? rb : ra, rk = bk === a ? ra : rb;
+      if (sameRoad && Geo.turnOf(car.fromArm, car.toArm) !== 'straight' && rc <= rk)
+        return { who: bk === a ? 'a' : 'b', reason:'rad_abbiegen' };
+    }
 
     if (sc.railPriority && ra === rb && oneTram){
       /* at lights both have green: the turning rule, Sec. 9 (3) */
@@ -167,6 +180,12 @@ var Rules = (function(){
         de:'Wer abbiegt, muss Schienenfahrzeuge durchfahren lassen – auch wenn sie neben der Fahrbahn in gleicher Richtung fahren und du Grün hast.',
         en:'When you turn, you must let trams through first, even when they run beside the road in the same direction as you and you have green (§ 9 (3) StVO).' }
     },
+    rad_abbiegen: {
+      title:{ de:'Radfahrer geradeaus', en:'Cyclist going straight on' },
+      text:{
+        de:'Wer abbiegt, muss Radfahrer durchfahren lassen, die auf dem Radweg geradeaus weiterfahren – auch wenn sie von hinten kommen. Darum vor dem Abbiegen: Spiegel und Schulterblick.',
+        en:'When you turn, cyclists going straight on along the cycle path go first – even when they come up from behind you. That is why you check mirror and shoulder before every turn (§ 9 (3) StVO).' }
+    },
     bus: {
       title:{ de:'Linienbus fährt ab', en:'Bus leaving its stop' },
       text:{
@@ -253,6 +272,46 @@ var Rules = (function(){
       tip:{
         de:'Beim Abbiegen langsam machen und in die Seitenstrasse schauen, bevor du einbiegst.',
         en:'Slow right down as you turn and look into the side road before you commit.' }
+    },
+    schulterblick: {
+      pts:15, sev:'minor', law:'§ 9 (1) StVO',
+      title:{ de:'Schulterblick vergessen', en:'No shoulder check' },
+      why:{
+        de:'Vor dem Abbiegen gehört ein Blick über die Schulter in den toten Winkel – dort sieht dich kein Spiegel. Beim Rechtsabbiegen über einen Radweg ist das in der Prüfung ein schwerer Fehler.',
+        en:'Before a turn you look over your shoulder into the blind spot, which no mirror shows. Turning right across a cycle path without it fails the real exam.' },
+      tip:{
+        de:'Reihenfolge: Innenspiegel – Blinker – Aussenspiegel – Schulterblick – abbiegen.',
+        en:'Order: mirror – indicate – door mirror – shoulder check – turn. (Q / E to look, M for the mirror.)' }
+    },
+    schulterblick_rad: {
+      pts:35, sev:'major', law:'§ 9 (1) StVO',
+      title:{ de:'Kein Schulterblick vor dem Radweg', en:'No shoulder check before the cycle path' },
+      why:{
+        de:'Du bist über einen Radweg abgebogen, ohne über die Schulter zu schauen. Ein Radfahrer im toten Winkel wäre für dich unsichtbar gewesen – das ist der häufigste Grund, in der Prüfung durchzufallen.',
+        en:'You turned across a cycle path without looking over your shoulder. A cyclist in your blind spot would have been invisible to you – this is the most common reason people fail the exam.' },
+      tip:{
+        de:'Kurz vor dem Abbiegen, wenn du schon langsam bist: Schulterblick zur Abbiegeseite.',
+        en:'Just before the turn, once you are slow: look over the shoulder on the side you turn to (E for right, Q for left).' }
+    },
+    spiegel: {
+      pts:5, sev:'minor', law:'§ 9 (1) StVO',
+      title:{ de:'Spiegel nicht beachtet', en:'Mirror not checked' },
+      why:{
+        de:'Vor dem Blinken und Abbiegen schaust du in den Spiegel, damit du weisst, was hinter dir ist.',
+        en:'Before you indicate and turn, you check the mirror so you know what is behind you.' },
+      tip:{
+        de:'Spiegel zuerst, dann blinken (Taste M).',
+        en:'Mirror first, then indicate (key M).' }
+    },
+    abbiegen_rad: {
+      pts:40, sev:'major', law:'§ 9 (3) StVO',
+      title:{ de:'Beim Abbiegen Radfahrer missachtet', en:'Cut across a cyclist while turning' },
+      why:{
+        de:'Ein Radfahrer, der geradeaus weiterfuhr, musste wegen dir bremsen. Beim Abbiegen haben Radfahrer auf dem Radweg Vorrang – der klassische Abbiegeunfall.',
+        en:'A cyclist going straight on had to brake because of you. When you turn, cyclists on the cycle path go first – this is the classic turning collision.' },
+      tip:{
+        de:'Vor dem Rechtsabbiegen: Innenspiegel, rechter Aussenspiegel, Schulterblick rechts – und langsam genug, um noch anzuhalten.',
+        en:'Before turning right: mirror, right door mirror, look over your right shoulder – and be slow enough to still stop.' }
     },
     blinker: {
       pts:10, sev:'minor', law:'§ 9 (1) StVO',
@@ -386,7 +445,33 @@ var Rules = (function(){
     }
   };
 
+  /* ------------------------------------------------------------------
+     The five competence areas the examiner scores in the practical test
+     (optimierte Fahrerlaubnisprüfung, since 2021), and where each of our
+     faults belongs.
+     ------------------------------------------------------------------ */
+  var CATEGORIES = [
+    { id:'beobachtung', de:'Verkehrsbeobachtung', en:'Observing traffic',
+      faults:['vorfahrt','abbiegen_rad','fussgaenger','abbiegen_fussgaenger','rotlicht','stop_kein_halt',
+              'gruenpfeil_kein_halt','schulterblick','schulterblick_rad','spiegel','einsatz_blockiert',
+              'bus_behindert','kollision','ped_kollision'] },
+    { id:'position', de:'Fahrzeugpositionierung', en:'Positioning the car',
+      faults:['haltelinie','kreuzung_blockiert'] },
+    { id:'tempo', de:'Geschwindigkeitsanpassung', en:'Choosing your speed',
+      faults:['zu_schnell','kurve_zu_schnell','schritt','vorfahrt_nicht_genutzt'] },
+    { id:'kommunikation', de:'Kommunikation', en:'Communicating',
+      faults:['blinker','blinker_kreisel'] },
+    { id:'bedienung', de:'Fahrzeugbedienung', en:'Handling the car',
+      faults:[] }
+  ];
+  function categoryOf(id){
+    for (var i = 0; i < CATEGORIES.length; i++)
+      if (CATEGORIES[i].faults.indexOf(id) >= 0) return CATEGORIES[i];
+    return CATEGORIES[0];
+  }
+
   return {
+    CATEGORIES: CATEGORIES, categoryOf: categoryOf,
     SIGN_RANK: SIGN_RANK, FAULTS: FAULTS, REASON_TEXT: REASON_TEXT,
     signOf: signOf, lightFor: lightFor, rankOf: rankOf,
     hasGreenArrow: hasGreenArrow, priority: priority

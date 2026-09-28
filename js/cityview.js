@@ -36,7 +36,8 @@ var CityView = (function(){
 
   /* how far back from a street's centre line the houses start */
   function setback(map, isCol, index, side){
-    if (isCol && index === map.railCol && side > 0) return City.RAIL.bed[1] + 6 + WALK;
+    /* beside the U-Bahn: its bed, then the cycle path, then the pavement */
+    if (isCol && index === map.railCol && side > 0) return City.RAIL.bed[1] + 6 + 12 + WALK;
     return KERB + WALK;
   }
 
@@ -146,8 +147,9 @@ var CityView = (function(){
         var k = ((t - from) % S + S) % S;
         if (k < 190 || k > S - 190) continue;           // keep the junctions clear
         [-1, 1].forEach(function(side){
-          var off = setback(map, isCol, i, side) - WALK*0.35;
-          if (isCol && i === map.railCol && side > 0) off = City.RAIL.bed[1] + 6 + WALK*0.35;
+          /* along a main road the cycle path runs where the trees would
+             stand, so they move back to the edge of the pavement */
+          var off = setback(map, isCol, i, side) - (main ? 4 : WALK*0.35);
           var px = isCol ? line + side*off : t, py = isCol ? t : line + side*off;
           if (rand() < (main ? 0.9 : 0.55)) trees.push({ x:px, y:py, h:(7 + rand()*5)*M, r:(2.2 + rand()*1.4)*M, tone:rand() });
         });
@@ -179,5 +181,15 @@ var CityView = (function(){
              tracks:[x + City.RAIL.track.S, x + City.RAIL.track.N], S:S };
   }
 
-  return { build:build, railBed:railBed, KERB:KERB, WALK:WALK, rng:rng };
+  /* the cycle paths, as strips: each with its centre line from a to b
+     (world units), its half-width, and the side streets it crosses */
+  function bikePaths(map){
+    return (map.bikeLanes || []).map(function(lane){
+      var r = map.bikeRoute(lane);
+      return { a:r.path.pts[0], b:r.path.pts[r.path.pts.length - 1], half:City.BIKE.half,
+               col:lane.col, lane:lane, nodes:r.steps.map(function(st){ return st.node; }) };
+    });
+  }
+
+  return { build:build, railBed:railBed, bikePaths:bikePaths, KERB:KERB, WALK:WALK, rng:rng };
 })();

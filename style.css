@@ -516,6 +516,15 @@ kbd{
 .fault.minor .f-plate{ background:var(--warn); color:#fff; }
 .fault.hint  .f-plate{ background:var(--info); color:#fff; }
 .fault.ok    .f-plate{ background:var(--good); color:#fff; }
+/* the examiner's five areas on the result screen */
+.checklist{ display:flex; flex-direction:column; gap:6px; }
+.check-row{ display:grid; grid-template-columns:22px minmax(120px, auto) 1fr; gap:10px; align-items:baseline;
+            padding:7px 10px; border-radius:var(--radius-sm); background:var(--surface-2); font-size:14px; }
+.check-mark{ font-weight:700; text-align:center; }
+.check-row.ok .check-mark{ color:var(--good); }
+.check-row.bad .check-mark{ color:var(--bad); }
+.check-name{ font-weight:600; }
+.check-what{ color:var(--ink-2); font-size:13px; }
 /* retried with a rewind: shown for revision, not counted */
 .fault.fixed{ opacity:.72; }
 .fault.fixed .f-plate{ background:var(--good); color:#fff; }

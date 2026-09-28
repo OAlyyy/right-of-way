@@ -124,6 +124,26 @@ game's grid:
 - Simplifications: the real streets are not a grid, one-way streets are
   two-way here, and there are no pedestrians or cyclists in free drive yet.
 
+**People and cyclists.** Pedestrians wait at the corners of every junction
+and cross: at lights on their own green, at a zebra whenever they like, and
+elsewhere when the road is clear - but anyone turning into the street they
+are crossing must let them go (§ 9 (3)). Cyclists ride red cycle paths along
+both main roads; whoever turns across the path must let a cyclist going
+straight on through, even one coming up from behind. That is why the game
+now watches **where you look**: hold `Q` / `E` to look over your shoulder and
+`M` (or the MIRROR button) to check the rear-view mirror, which the 3D view
+shows at the top of the windscreen. Turning without a shoulder check is a
+fault - across a cycle path it is a fail, as in the real test.
+
+**Take the test** runs a 15-minute exam on the Frankfurt map. The examiner
+gives directions out loud, in German ("An der nächsten Kreuzung bitte rechts
+abbiegen"); there are no hints and no rewinds, small faults are noted
+silently, and one serious fault ends the test on the spot. You fail on one
+serious fault, five small ones, or the same small one three times. Every
+drive ends with the examiner's sheet: the five areas of the German practical
+test (Verkehrsbeobachtung, Fahrzeugpositionierung, Geschwindigkeitsanpassung,
+Kommunikation, Fahrzeugbedienung), each clean or with what went wrong.
+
 **Random town** next to it builds a made-up grid from a random seed instead,
 with a roundabout and more mixed junctions.
 
@@ -265,6 +285,8 @@ node test/drive-render-check.js  # open world: every junction kind draws cleanly
 node test/longhalt-check.js      # a long wait at a busy crossing always ends
 node test/rewind-check.js        # break a rule, rewind, retry: the town restores cleanly
 node test/tram-check.js          # Frankfurt map: trains run, get priority, nobody is falsely accused
+node test/street-check.js        # people and cyclists: nobody run down, turning blind gets booked
+node test/exam-check.js          # the test: careful driving passes, not looking or speeding fails
 ```
 
 `harness.js` is the useful one for the lessons. It drives each lesson twice —

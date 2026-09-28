@@ -114,6 +114,7 @@ var GL3D = (function(){
     function std(o){ return new THREE.MeshStandardMaterial(o); }
     MAT = {
       asphalt: std({ color:0x9a9a9a, roughness:0.92 }),
+      cycle:   std({ color:0xc2604a, roughness:0.9 }),          // red cycle-path asphalt
       pavers:  std({ color:0xcfcac2, roughness:0.9 }),
       gravel:  std({ color:0xb8b0a4, roughness:1.0 }),
       grass:   std({ color:0xa8b890, roughness:1.0 }),
@@ -147,7 +148,7 @@ var GL3D = (function(){
   var TILE = { asphalt:5, pavers:2.4, gravel:3, grass:4, field:6 };
   function applyTextures(){
     var M = mats();
-    [['asphalt','asphalt'], ['pavers','pavers'], ['gravel','gravel'], ['grass','grass'], ['field','grass'], ['kerb','pavers']]
+    [['asphalt','asphalt'], ['cycle','asphalt'], ['pavers','pavers'], ['gravel','gravel'], ['grass','grass'], ['field','grass'], ['kerb','pavers']]
       .forEach(function(p){
         var d = tex[p[1] + '_diff'], n = tex[p[1] + '_nor'];
         if (d && M[p[0]].map !== d){ M[p[0]].map = d; M[p[0]].needsUpdate = true; }
@@ -332,7 +333,7 @@ var GL3D = (function(){
   function stopLineX(sc, arm, ring){
     if (ring) return CFG.RING + CFG.BOX + 8;
     if (sc.rail && arm === sc.rail.side) return sc.rail.carHold - 2;
-    if (sc.x !== undefined) return CFG.BOX + 30;
+    if (sc.x !== undefined) return City.HOLD - 3;
     return CFG.BOX + 8;
   }
   var KERB_W = 2.6, KERB_H = 0.13;             // world units wide, metres high
@@ -384,8 +385,20 @@ var GL3D = (function(){
       var lit = sc.lights && sc.lights.groups[arm];
       var lineX = stopLineX(sc, arm, ring);
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      if (hasCross && !city) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
       if (lit || sign === 'stop') armFlat(paint, arm, lineX, -B, lineX + 6, 0, ox, oy, 0.045);
+      /* in town the people cross just outside the junction box: a zebra
+         where there is one, the broken lines of a Furt at the lights */
+      if (city && !(sc.rail && arm === sc.rail.side)){
+        if (hasCross){
+          for (var zy = -B + 4; zy < B - 3; zy += 14) armFlat(paint, arm, City.CW.in, zy, City.CW.out, zy + 7, ox, oy, 0.045);
+        } else if (sc.lights){
+          for (var fy = -B; fy < B; fy += 10){
+            armFlat(paint, arm, City.CW.in, fy, City.CW.in + 1.6, fy + 5, ox, oy, 0.045);
+            armFlat(paint, arm, City.CW.out - 1.6, fy, City.CW.out, fy + 5, ox, oy, 0.045);
+          }
+        }
+      }
       else if (sign === 'yield' || sign === 'ringentry' || sign === 'exit'){
         /* the Haifischzähne: a row of white triangles */
         for (var y = -B + 3; y < -4; y += 12){
@@ -393,7 +406,7 @@ var GL3D = (function(){
           paint.tri([p0[0]*U,0.045,p0[1]*U], [p1[0]*U,0.045,p1[1]*U], [p2[0]*U,0.045,p2[1]*U], [0,1,0], [[0,0],[1,0],[0,1]]);
         }
       }
-      if (hasCross){
+      if (hasCross && !city){
         for (var yy = -B + 5; yy < B - 4; yy += 14)
           armFlat(paint, arm, Sim.CROSS_MID - Sim.CROSS_HALF, yy, Sim.CROSS_MID + Sim.CROSS_HALF, yy + 7, ox, oy, 0.045);
       }
@@ -602,6 +615,7 @@ var GL3D = (function(){
     var P = {
       ground:new Builder(), yard:new Builder(), bed:new Builder(), road:new Builder(), kerb:new Builder(),
       paint:new Builder(), pave:new Builder(), island:new Builder(),
+      bike:new Builder(), bikeX:new Builder(),
       wallA:new Builder(), wallB:new Builder(), shop:new Builder(), home:new Builder(),
       gable:new Builder(), roof:new Builder(), eaves:new Builder()
     };
@@ -616,6 +630,7 @@ var GL3D = (function(){
       var bed = CityView.railBed(map);
       if (bed) P.bed.flat(bed.x0, bed.y0, bed.x1, bed.y1, 0.02, TILE.gravel);
       map.nodes.forEach(function(n){ buildJunction(P, n, S/2 + 2, true); });
+      buildBikePaths(P, map);
       buildHouses(P, view.houses);
       buildTrees(group, view.trees);
       lampPos = buildLamps(group, view.lamps);
@@ -635,6 +650,7 @@ var GL3D = (function(){
     var layers = [
       ['ground', M.pavers], ['yard', world.map ? M.grass : M.field], ['bed', M.gravel], ['road', M.asphalt],
       ['kerb', M.kerb], ['paint', M.paint], ['pave', M.pavers], ['island', M.grass],
+      ['bike', M.cycle], ['bikeX', M.cycle],
       ['wallA', M.wallA, true], ['wallB', M.wallB, true], ['shop', M.shop, true], ['home', M.home, true],
       ['gable', M.gable, true], ['roof', M.roof, true], ['eaves', M.kerb, true]
     ];
@@ -679,6 +695,35 @@ var GL3D = (function(){
     }
     if (sc.place && sc.rail) stations.push(addStation(group, sc.place, ox + City.RAIL.bed[1] + 22, oy - CFG.BOX - 60));
     void world;
+  }
+
+  /* the red cycle paths along the main roads, and where they cross a side
+     street: red over the asphalt, with the broken white edges of a
+     Radfahrerfurt */
+  function buildBikePaths(P, map){
+    CityView.bikePaths(map).forEach(function(bp){
+      var h = bp.half;
+      P.bike.flat(Math.min(bp.a.x, bp.b.x) - (bp.col ? h : 0), Math.min(bp.a.y, bp.b.y) - (bp.col ? 0 : h),
+                  Math.max(bp.a.x, bp.b.x) + (bp.col ? h : 0), Math.max(bp.a.y, bp.b.y) + (bp.col ? 0 : h),
+                  0.02, TILE.asphalt);
+      var from = bp.lane.from, off = bp.lane.off;
+      var dir = { x:-Geo.ARM_VEC[from].x, y:-Geo.ARM_VEC[from].y }, right = Geo.rot90cw(dir);
+      var side = Geo.ARM_ORDER.filter(function(a){
+        return Geo.ARM_VEC[a].x === right.x && Geo.ARM_VEC[a].y === right.y;
+      })[0];
+      bp.nodes.forEach(function(n){
+        if (n.arms.indexOf(side) < 0) return;
+        function pt(t, lat){ return [n.x + dir.x*t + right.x*lat, n.y + dir.y*t + right.y*lat]; }
+        var e = CFG.BOX + 7, p0 = pt(-e, off - h), p1 = pt(e, off + h);
+        P.bikeX.flat(Math.min(p0[0], p1[0]), Math.min(p0[1], p1[1]), Math.max(p0[0], p1[0]), Math.max(p0[1], p1[1]), 0.036, TILE.asphalt);
+        for (var t = -e; t < e; t += 9){
+          [off - h, off + h - 1.4].forEach(function(lat){
+            var q0 = pt(t, lat), q1 = pt(t + 4.5, lat + 1.4);
+            P.paint.flat(Math.min(q0[0], q1[0]), Math.min(q0[1], q1[1]), Math.max(q0[0], q1[0]), Math.max(q0[1], q1[1]), 0.045);
+          });
+        }
+      });
+    });
   }
 
   function buildRails(group, map, bed, view){
@@ -1014,7 +1059,7 @@ var GL3D = (function(){
     [-1, 1].forEach(function(side){
       var a = new THREE.Vector3(L*0.22, 0.92, side*(W*0.42)), b = new THREE.Vector3(L*0.05, 1.40, side*(W*0.38));
       var len = a.distanceTo(b);
-      var pil = new THREE.Mesh(new THREE.BoxGeometry(0.09, len, 0.13), VMs.dash);
+      var pil = new THREE.Mesh(new THREE.BoxGeometry(0.06, len, 0.09), VMs.dash);
       pil.position.copy(a).add(b).multiplyScalar(0.5);
       pil.lookAt(b); pil.rotateX(Math.PI/2);
       car.add(pil);
@@ -1032,7 +1077,8 @@ var GL3D = (function(){
     var cur = dyn.meshes[v.id];
     if (cur && cur.userData.key === key) return cur;
     if (cur){ scene.remove(cur); }
-    var g = v.kind === 'tram' ? buildTram(v) : v.kind === 'bus' ? buildBus(v) : buildCar(v);
+    var g = v.kind === 'tram' ? buildTram(v) : v.kind === 'bus' ? buildBus(v)
+          : v.kind === 'bike' ? buildBike(v) : buildCar(v);
     if (v.isPlayer) buildCockpit(v, g);
     g.userData.key = key;
     scene.add(g);
@@ -1048,6 +1094,11 @@ var GL3D = (function(){
       g.position.set(v.pos.x*U, 0, v.pos.y*U);
       g.rotation.y = -v.pos.h;
       (g.userData.wheels || []).forEach(function(w){ w.children[0] && (w.rotation.z = -(v.s*U)/0.33); });
+      /* a cyclist pedals while moving */
+      if (g.userData.rider){
+        var ph = v.s*U*1.6;
+        g.userData.rider.userData.limbs.forEach(function(l){ l.hip.rotation.z = 0.9 + Math.sin(ph + (l.side > 0 ? Math.PI : 0))*0.45; });
+      }
       var blink = (t*2.2) % 1 < 0.55;
       (g.userData.brake || []).forEach(function(m){ m.visible = !!v.brakeLight; });
       var bl = g.userData.blink;
@@ -1065,27 +1116,129 @@ var GL3D = (function(){
       if (!seen[id]){ scene.remove(dyn.meshes[id]); delete dyn.meshes[id]; }
     });
   }
+  /* ---------------- people ---------------- */
+  var COATS  = ['#2f3b52','#5b3a2e','#3d4a3a','#7a1f2b','#1f1f24','#8b7355','#2c5a7a','#b9b2a6','#6b2f5b','#c4572e'];
+  var TROUSERS = ['#1d2330','#26282c','#3b3a36','#2a3b5c','#4a4038'];
+  var SKINS  = ['#f0d0b4','#e2bf9d','#c89a74','#8d5f3e','#5e3d28'];
+  var HAIR   = ['#2b2620','#4a3322','#8a6a45','#1a1a1a','#b8b0a2'];
+  var pmat = {};
+  function colorMat(c, rough){
+    var k = c + (rough || '');
+    return pmat[k] || (pmat[k] = new THREE.MeshStandardMaterial({ color:c, roughness:rough || 0.85 }));
+  }
+  function pick(list, x){ return list[Math.floor(x*list.length) % list.length]; }
+  var PG = null;
+  function personGeo(){
+    if (PG) return PG;
+    PG = {
+      torso: new THREE.CylinderGeometry(0.19, 0.16, 0.62, 12),
+      hips:  new THREE.CylinderGeometry(0.16, 0.15, 0.16, 12),
+      leg:   new THREE.CylinderGeometry(0.075, 0.06, 0.84, 8).translate(0, -0.42, 0),
+      arm:   new THREE.CylinderGeometry(0.05, 0.045, 0.62, 8).translate(0, -0.31, 0),
+      head:  new THREE.SphereGeometry(0.115, 14, 12),
+      hair:  new THREE.SphereGeometry(0.12, 14, 8, 0, Math.PI*2, 0, Math.PI*0.55),
+      shoe:  new THREE.BoxGeometry(0.24, 0.07, 0.1),
+      bag:   new THREE.BoxGeometry(0.1, 0.32, 0.26)
+    };
+    return PG;
+  }
+  /* a person facing +x, feet on y = 0; limbs hang from hip and shoulder
+     pivots so they can swing */
+  function buildPerson(look, kid){
+    var G = personGeo(), g = new THREE.Group(), body = new THREE.Group();
+    var s = kid ? 0.68 : (0.94 + 0.12*((look*7) % 1));
+    body.scale.setScalar(s);
+    g.add(body);
+    var coat = colorMat(pick(COATS, look)), legs = colorMat(pick(TROUSERS, (look*3.7) % 1));
+    var skin = colorMat(pick(SKINS, (look*5.3) % 1), 0.6), hair = colorMat(pick(HAIR, (look*9.1) % 1));
+    var t = part(G.torso, coat, 0, 1.22, 0, body, true);
+    part(G.hips, legs, 0, 0.88, 0, body, true);
+    var head = part(G.head, skin, 0, 1.68, 0, body, true);
+    part(G.hair, hair, -0.01, 1.70, 0, body);
+    var limbs = [];
+    [-1, 1].forEach(function(side){
+      var hip = new THREE.Group(); hip.position.set(0, 0.88, side*0.085); body.add(hip);
+      var l = new THREE.Mesh(G.leg, legs); l.castShadow = true; hip.add(l);
+      var shoe = new THREE.Mesh(G.shoe, colorMat('#1b1b1b')); shoe.position.set(0.05, -0.84, 0); hip.add(shoe);
+      var sh = new THREE.Group(); sh.position.set(0, 1.49, side*0.215); body.add(sh);
+      var a = new THREE.Mesh(G.arm, coat); a.castShadow = true; sh.add(a);
+      limbs.push({ hip:hip, shoulder:sh, side:side });
+    });
+    if (!kid && look > 0.6) part(G.bag, colorMat('#3a2c22'), -0.02, 1.05, 0.26, body);
+    g.userData.limbs = limbs; g.userData.phase = look*6.28;
+    void t; void head;
+    return g;
+  }
+  function swing(g, amount, t){
+    var ph = t*7.5 + g.userData.phase;
+    g.userData.limbs.forEach(function(l){
+      var a = Math.sin(ph) * amount * l.side;
+      l.hip.rotation.z = a;
+      l.shoulder.rotation.z = -a*0.8;
+    });
+  }
   function syncPeds(world){
     var seen = {};
     world.peds.forEach(function(ped, i){
-      var k = 'p' + i;
       if (ped.state === 'done') return;
+      if (ped.look === undefined) ped.look = (i*0.37 + 0.11) % 1;
+      var k = ped.gid || (ped.gid = 'p' + (++pedIds));
       seen[k] = true;
       var g = dyn.peds[k];
-      if (!g){
-        g = new THREE.Group();
-        var coat = new THREE.MeshStandardMaterial({ color: ped.kid ? 0xe0863a : 0x3f5373, roughness:0.8 });
-        var s = ped.kid ? 0.72 : 1;
-        part(new THREE.CylinderGeometry(0.2*s, 0.17*s, 0.7*s, 10), coat, 0, 1.1*s, 0, g, true);
-        part(new THREE.CylinderGeometry(0.08*s, 0.08*s, 0.8*s, 8), mats().trunk, -0.08*s, 0.4*s, 0, g, true);
-        part(new THREE.CylinderGeometry(0.08*s, 0.08*s, 0.8*s, 8), mats().trunk, 0.08*s, 0.4*s, 0, g, true);
-        part(new THREE.SphereGeometry(0.12*s, 12, 10), new THREE.MeshStandardMaterial({ color:0xe2bf9d }), 0, 1.6*s, 0, g, true);
-        scene.add(g); dyn.peds[k] = g;
-      }
+      if (!g){ g = buildPerson(ped.look, ped.kid); scene.add(g); dyn.peds[k] = g; }
       var pt = ped.point();
       g.position.set(pt.x*U, 0, pt.y*U);
+      /* facing the way they walk across; waiting, they face the road */
+      var q = Geo.rot90cw(Geo.ARM_VEC[ped.arm]);
+      g.rotation.y = -Math.atan2(q.y*ped.dir, q.x*ped.dir);
+      swing(g, ped.state === 'walking' ? 0.45 : 0, world.t);
     });
     Object.keys(dyn.peds).forEach(function(k){ if (!seen[k]){ scene.remove(dyn.peds[k]); delete dyn.peds[k]; } });
+  }
+  var pedIds = 0;
+
+  /* a cyclist on a city bike, facing +x */
+  function buildBike(v){
+    var VMs = vehicleMats(), g = new THREE.Group();
+    var frame = colorMat(v.color || '#2b5d8a', 0.4);
+    var tyre = new THREE.TorusGeometry(0.33, 0.03, 8, 28);
+    g.userData.wheels = [];
+    [-0.52, 0.52].forEach(function(x){
+      var wg = new THREE.Group(); wg.position.set(x, 0.34, 0);
+      var t = new THREE.Mesh(tyre, VMs.tyre); t.castShadow = true; wg.add(t);
+      var hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.01, 12).rotateX(Math.PI/2), colorMat('#9aa0a6', 0.3));
+      hub.material = new THREE.MeshStandardMaterial({ color:0x9aa0a6, transparent:true, opacity:0.25, metalness:0.8 });
+      wg.add(hub);
+      g.add(wg); g.userData.wheels.push(wg);
+    });
+    function bar(a, b, r, m){
+      var va = new THREE.Vector3(a[0], a[1], 0), vb = new THREE.Vector3(b[0], b[1], 0);
+      var mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, va.distanceTo(vb), 6), m);
+      mesh.position.copy(va).add(vb).multiplyScalar(0.5);
+      mesh.lookAt(vb); mesh.rotateX(Math.PI/2);
+      g.add(mesh); return mesh;
+    }
+    bar([-0.52, 0.34], [-0.05, 0.36], 0.025, frame);
+    bar([-0.05, 0.36], [0.40, 0.80], 0.025, frame);
+    bar([-0.52, 0.34], [-0.18, 0.86], 0.022, frame);
+    bar([-0.05, 0.36], [-0.20, 0.90], 0.025, frame);
+    bar([0.52, 0.34], [0.40, 0.95], 0.022, frame);
+    bar([-0.18, 0.86], [0.40, 0.80], 0.025, frame);
+    part(new THREE.BoxGeometry(0.1, 0.02, 0.56), colorMat('#1a1a1a'), 0.38, 1.0, 0, g);          // handlebar
+    part(new THREE.BoxGeometry(0.24, 0.05, 0.14), colorMat('#1a1a1a'), -0.22, 0.93, 0, g);        // saddle
+    /* the rider: leaning a little forward, hands on the bar */
+    var rider = buildPerson(v.look || 0.3, false);
+    rider.position.set(-0.24, -0.02, 0);
+    var body = rider.children[0];
+    body.rotation.z = -0.22;
+    rider.userData.limbs.forEach(function(l){ l.shoulder.rotation.z = -1.0; });
+    g.add(rider);
+    g.userData.rider = rider;
+    var helmet = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8, 0, Math.PI*2, 0, Math.PI*0.5), colorMat('#e8e8e2', 0.4));
+    helmet.position.set(0.18, 1.72, 0); body.add(helmet);
+    part(new THREE.BoxGeometry(0.04, 0.04, 0.06), VMs.tail, -0.6, 0.62, 0, g);                    // rear light
+    g.userData.brake = []; g.userData.blink = { left:[], right:[] };
+    return g;
   }
 
   /* ---------------- per frame: lights, route, sky ---------------- */
@@ -1187,8 +1340,53 @@ var GL3D = (function(){
   var sunDir = new (typeof THREE !== 'undefined' ? THREE.Vector3 : Object)();
   var envLevel = null;
 
+  /* ---------------- the rear-view mirror ---------------- */
+  /* A second camera at the mirror, looking back along the car, drawn into
+     a small picture at the top of the windscreen - flipped left to right,
+     as a mirror is, so a cyclist behind you on the right shows on the right. */
+  var mirror = null;
+  function mirrorSetup(){
+    if (mirror) return mirror;
+    var rt = new THREE.WebGLRenderTarget(640, 200);
+    rt.texture.encoding = THREE.sRGBEncoding;
+    var cam = new THREE.PerspectiveCamera(24, 3.2, 0.3, 900);
+    cam.rotation.order = 'YXZ';
+    var ov = new THREE.Scene(), ocam = new THREE.OrthographicCamera(0, 1, 1, 0, -10, 10);
+    var frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color:0x0c0d0e }));
+    var glass = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+                  new THREE.MeshBasicMaterial({ map:rt.texture, side:THREE.DoubleSide }));
+    glass.position.z = 1;
+    ov.add(frameMesh); ov.add(glass);
+    return (mirror = { rt:rt, cam:cam, ov:ov, ocam:ocam, frame:frameMesh, glass:glass });
+  }
+  function drawMirror(world, yaw, w, h, big){
+    if (Math.abs(yaw || 0) > 0.35) return;           // looking out of a side window
+    var m = mirrorSetup(), p = world.player;
+    var c = Math.cos(p.pos.h), s = Math.sin(p.pos.h);
+    m.cam.position.set((p.pos.x + c*0.2*CFG.PPM)*U, 1.32, (p.pos.y + s*0.2*CFG.PPM)*U);
+    m.cam.rotation.set(-0.03, -(p.pos.h + Math.PI) - Math.PI/2, 0);
+    var own = dyn.meshes[p.id];
+    if (own) own.visible = false;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.setRenderTarget(m.rt);
+    renderer.render(scene, m.cam);
+    renderer.setRenderTarget(null);
+    renderer.shadowMap.autoUpdate = true;
+    if (own) own.visible = true;
+
+    var mw = Math.min(w*0.36, 320) * (big ? 1.45 : 1), mh = mw/3.2;
+    var cx = w/2, cy = h - 10 - mh/2 - (big ? 0 : 4);
+    m.ocam.left = 0; m.ocam.right = w; m.ocam.top = h; m.ocam.bottom = 0; m.ocam.updateProjectionMatrix();
+    m.frame.position.set(cx, cy, 0); m.frame.scale.set(mw + 10, mh + 10, 1);
+    m.glass.position.set(cx, cy, 1); m.glass.scale.set(-mw, mh, 1);     // negative: mirrored
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(m.ov, m.ocam);
+    renderer.autoClear = true;
+  }
+
   /* ---------------- main entry ---------------- */
-  function frame(world, yaw, w, h){
+  function frame(world, yaw, w, h, opts){
     if (!available()) return false;
     if (!built || built.world !== world) buildWorld(world);
     if (w !== lastW || h !== lastH){
@@ -1227,6 +1425,7 @@ var GL3D = (function(){
     headlamp.target.position.set(cx + c*30, 0, cz + s*30);
 
     renderer.render(scene, camera);
+    if (world.map) drawMirror(world, yaw, w, h, opts && opts.mirror);
     return true;
   }
 

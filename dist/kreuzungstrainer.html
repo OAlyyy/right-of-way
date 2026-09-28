@@ -527,6 +527,15 @@ kbd{
 .fault.minor .f-plate{ background:var(--warn); color:#fff; }
 .fault.hint  .f-plate{ background:var(--info); color:#fff; }
 .fault.ok    .f-plate{ background:var(--good); color:#fff; }
+/* the examiner's five areas on the result screen */
+.checklist{ display:flex; flex-direction:column; gap:6px; }
+.check-row{ display:grid; grid-template-columns:22px minmax(120px, auto) 1fr; gap:10px; align-items:baseline;
+            padding:7px 10px; border-radius:var(--radius-sm); background:var(--surface-2); font-size:14px; }
+.check-mark{ font-weight:700; text-align:center; }
+.check-row.ok .check-mark{ color:var(--good); }
+.check-row.bad .check-mark{ color:var(--bad); }
+.check-name{ font-weight:600; }
+.check-what{ color:var(--ink-2); font-size:13px; }
 /* retried with a rewind: shown for revision, not counted */
 .fault.fixed{ opacity:.72; }
 .fault.fixed .f-plate{ background:var(--good); color:#fff; }
@@ -654,6 +663,7 @@ kbd{
       </div>
       <div class="drive-cta-btns">
         <button id="btn-drive" class="primary" type="button" data-t="drive.cta.button"></button>
+        <button id="btn-exam" class="primary alt" type="button" data-t="exam.button"></button>
         <button id="btn-drive-random" class="ghost small" type="button" data-t="drive.cta.random"></button>
       </div>
     </div>
@@ -717,6 +727,11 @@ kbd{
           <button id="look-r" class="ind look" type="button" title="E">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l10 8-10 8v-5H4V9h6z"/></svg>
             <small data-t="look.label">LOOK</small>
+          </button>
+          <!-- a glance in the rear-view mirror: the examiner watches for it -->
+          <button id="look-m" class="ind look" type="button" title="M">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="8" rx="3"/></svg>
+            <small data-t="mirror.label">MIRROR</small>
           </button>
         </div>
         <div class="cluster">
@@ -806,6 +821,7 @@ kbd{
           <tr><td><kbd>W</kbd> <kbd>&uarr;</kbd></td><td data-t="ctrl.throttle"></td></tr>
           <tr><td><kbd>S</kbd> <kbd>&darr;</kbd></td><td data-t="ctrl.brake"></td></tr>
           <tr><td><kbd>Q</kbd> <kbd>E</kbd></td><td data-t="ctrl.look"></td></tr>
+          <tr><td><kbd>M</kbd></td><td data-t="ctrl.mirror"></td></tr>
           <tr><td><kbd>A</kbd> <kbd>D</kbd></td><td data-t="ctrl.indicators"></td></tr>
           <tr><td><kbd>V</kbd></td><td data-t="ctrl.view"></td></tr>
           <tr><td><kbd>R</kbd></td><td data-t="ctrl.restart"></td></tr>
@@ -1305,6 +1321,18 @@ var I18N = (function(){
       'drive.hold':'Rewound {s} s. Press GAS (W) to try again — {tip}',
       'drive.hold.retrying':'Retrying: {what}',
       'drive.end':'End drive', 'drive.endShort':'End',
+      'mirror.label':'MIRROR', 'ctrl.mirror':'Check the mirror',
+      'exam.button':'Take the test',
+      'exam.timeLeft':'Left',
+      'exam.passed':'Passed', 'exam.failed':'Not passed',
+      'exam.sub.pass':'Clean enough to hand you your licence. {n} small fault(s).',
+      'exam.sub.major':'The examiner ended the test here:',
+      'exam.sub.many':'Too many small faults ({n}) – it adds up to unsafe driving.',
+      'exam.sub.repeated':'The same fault again and again shows it was not a slip.',
+      'exam.sub.ended':'You ended the test before the time was up.',
+      'exam.checklist':'The examiner\'s five areas',
+      'exam.ok':'no faults',
+      'exam.stopped':'Please pull over. I am afraid the test ends here.',
       'drive.result.title':'Drive ended',
       'drive.result.sub':'{a} junctions driven cleanly.',
       'drive.result.explained':'Mistakes still on your sheet:',
@@ -1382,6 +1410,18 @@ var I18N = (function(){
       'drive.hold':'{s} s zurückgespult. GAS (W) drücken und nochmal versuchen — {tip}',
       'drive.hold.retrying':'Neuer Versuch: {what}',
       'drive.end':'Fahrt beenden', 'drive.endShort':'Ende',
+      'mirror.label':'SPIEGEL', 'ctrl.mirror':'In den Spiegel schauen',
+      'exam.button':'Prüfung fahren',
+      'exam.timeLeft':'Rest',
+      'exam.passed':'Bestanden', 'exam.failed':'Nicht bestanden',
+      'exam.sub.pass':'Sauber genug für den Führerschein. {n} kleine(r) Fehler.',
+      'exam.sub.major':'Der Prüfer hat die Prüfung hier beendet:',
+      'exam.sub.many':'Zu viele kleine Fehler ({n}) – zusammen ist das unsicheres Fahren.',
+      'exam.sub.repeated':'Derselbe Fehler immer wieder zeigt: das war kein Ausrutscher.',
+      'exam.sub.ended':'Du hast die Prüfung vor Ablauf der Zeit beendet.',
+      'exam.checklist':'Die fünf Bereiche des Prüfers',
+      'exam.ok':'fehlerfrei',
+      'exam.stopped':'Bitte fahren Sie rechts ran. Die Prüfung ist leider beendet.',
       'drive.result.title':'Fahrt beendet',
       'drive.result.sub':'{a} Kreuzungen fehlerfrei gemeistert.',
       'drive.result.explained':'Diese Fehler stehen noch auf deinem Bogen:',
@@ -1729,10 +1769,23 @@ var Rules = (function(){
     /* A train beside the road coming the same way as a car is not queueing
        behind it: the car turning off across the tracks must let it pass. */
     var oneTram = (a.kind === 'tram') !== (b.kind === 'tram');
-    if (a.fromArm === b.fromArm && !oneTram)
+    var oneBike = (a.kind === 'bike' && !!a.lane) !== (b.kind === 'bike' && !!b.lane);
+    if (a.fromArm === b.fromArm && !oneTram && !oneBike)
       return { who:'follow', reason:'same_arm' };
 
     var ra = rankOf(sc, a, t), rb = rankOf(sc, b, t);
+
+    /* A cyclist riding straight on along a cycle path has priority over
+       anyone turning across it - from behind them (turning right) or
+       towards them (turning left) - whenever the two share the same
+       green or the same road: Sec. 9 (3) StVO. */
+    if (oneBike){
+      var bk = (a.kind === 'bike') ? a : b, car = bk === a ? b : a;
+      var sameRoad = car.fromArm === bk.fromArm || car.fromArm === Geo.opposite(bk.fromArm);
+      var rc = bk === a ? rb : ra, rk = bk === a ? ra : rb;
+      if (sameRoad && Geo.turnOf(car.fromArm, car.toArm) !== 'straight' && rc <= rk)
+        return { who: bk === a ? 'a' : 'b', reason:'rad_abbiegen' };
+    }
 
     if (sc.railPriority && ra === rb && oneTram){
       /* at lights both have green: the turning rule, Sec. 9 (3) */
@@ -1823,6 +1876,12 @@ var Rules = (function(){
         de:'Wer abbiegt, muss Schienenfahrzeuge durchfahren lassen – auch wenn sie neben der Fahrbahn in gleicher Richtung fahren und du Grün hast.',
         en:'When you turn, you must let trams through first, even when they run beside the road in the same direction as you and you have green (§ 9 (3) StVO).' }
     },
+    rad_abbiegen: {
+      title:{ de:'Radfahrer geradeaus', en:'Cyclist going straight on' },
+      text:{
+        de:'Wer abbiegt, muss Radfahrer durchfahren lassen, die auf dem Radweg geradeaus weiterfahren – auch wenn sie von hinten kommen. Darum vor dem Abbiegen: Spiegel und Schulterblick.',
+        en:'When you turn, cyclists going straight on along the cycle path go first – even when they come up from behind you. That is why you check mirror and shoulder before every turn (§ 9 (3) StVO).' }
+    },
     bus: {
       title:{ de:'Linienbus fährt ab', en:'Bus leaving its stop' },
       text:{
@@ -1909,6 +1968,46 @@ var Rules = (function(){
       tip:{
         de:'Beim Abbiegen langsam machen und in die Seitenstrasse schauen, bevor du einbiegst.',
         en:'Slow right down as you turn and look into the side road before you commit.' }
+    },
+    schulterblick: {
+      pts:15, sev:'minor', law:'§ 9 (1) StVO',
+      title:{ de:'Schulterblick vergessen', en:'No shoulder check' },
+      why:{
+        de:'Vor dem Abbiegen gehört ein Blick über die Schulter in den toten Winkel – dort sieht dich kein Spiegel. Beim Rechtsabbiegen über einen Radweg ist das in der Prüfung ein schwerer Fehler.',
+        en:'Before a turn you look over your shoulder into the blind spot, which no mirror shows. Turning right across a cycle path without it fails the real exam.' },
+      tip:{
+        de:'Reihenfolge: Innenspiegel – Blinker – Aussenspiegel – Schulterblick – abbiegen.',
+        en:'Order: mirror – indicate – door mirror – shoulder check – turn. (Q / E to look, M for the mirror.)' }
+    },
+    schulterblick_rad: {
+      pts:35, sev:'major', law:'§ 9 (1) StVO',
+      title:{ de:'Kein Schulterblick vor dem Radweg', en:'No shoulder check before the cycle path' },
+      why:{
+        de:'Du bist über einen Radweg abgebogen, ohne über die Schulter zu schauen. Ein Radfahrer im toten Winkel wäre für dich unsichtbar gewesen – das ist der häufigste Grund, in der Prüfung durchzufallen.',
+        en:'You turned across a cycle path without looking over your shoulder. A cyclist in your blind spot would have been invisible to you – this is the most common reason people fail the exam.' },
+      tip:{
+        de:'Kurz vor dem Abbiegen, wenn du schon langsam bist: Schulterblick zur Abbiegeseite.',
+        en:'Just before the turn, once you are slow: look over the shoulder on the side you turn to (E for right, Q for left).' }
+    },
+    spiegel: {
+      pts:5, sev:'minor', law:'§ 9 (1) StVO',
+      title:{ de:'Spiegel nicht beachtet', en:'Mirror not checked' },
+      why:{
+        de:'Vor dem Blinken und Abbiegen schaust du in den Spiegel, damit du weisst, was hinter dir ist.',
+        en:'Before you indicate and turn, you check the mirror so you know what is behind you.' },
+      tip:{
+        de:'Spiegel zuerst, dann blinken (Taste M).',
+        en:'Mirror first, then indicate (key M).' }
+    },
+    abbiegen_rad: {
+      pts:40, sev:'major', law:'§ 9 (3) StVO',
+      title:{ de:'Beim Abbiegen Radfahrer missachtet', en:'Cut across a cyclist while turning' },
+      why:{
+        de:'Ein Radfahrer, der geradeaus weiterfuhr, musste wegen dir bremsen. Beim Abbiegen haben Radfahrer auf dem Radweg Vorrang – der klassische Abbiegeunfall.',
+        en:'A cyclist going straight on had to brake because of you. When you turn, cyclists on the cycle path go first – this is the classic turning collision.' },
+      tip:{
+        de:'Vor dem Rechtsabbiegen: Innenspiegel, rechter Aussenspiegel, Schulterblick rechts – und langsam genug, um noch anzuhalten.',
+        en:'Before turning right: mirror, right door mirror, look over your right shoulder – and be slow enough to still stop.' }
     },
     blinker: {
       pts:10, sev:'minor', law:'§ 9 (1) StVO',
@@ -2042,7 +2141,33 @@ var Rules = (function(){
     }
   };
 
+  /* ------------------------------------------------------------------
+     The five competence areas the examiner scores in the practical test
+     (optimierte Fahrerlaubnisprüfung, since 2021), and where each of our
+     faults belongs.
+     ------------------------------------------------------------------ */
+  var CATEGORIES = [
+    { id:'beobachtung', de:'Verkehrsbeobachtung', en:'Observing traffic',
+      faults:['vorfahrt','abbiegen_rad','fussgaenger','abbiegen_fussgaenger','rotlicht','stop_kein_halt',
+              'gruenpfeil_kein_halt','schulterblick','schulterblick_rad','spiegel','einsatz_blockiert',
+              'bus_behindert','kollision','ped_kollision'] },
+    { id:'position', de:'Fahrzeugpositionierung', en:'Positioning the car',
+      faults:['haltelinie','kreuzung_blockiert'] },
+    { id:'tempo', de:'Geschwindigkeitsanpassung', en:'Choosing your speed',
+      faults:['zu_schnell','kurve_zu_schnell','schritt','vorfahrt_nicht_genutzt'] },
+    { id:'kommunikation', de:'Kommunikation', en:'Communicating',
+      faults:['blinker','blinker_kreisel'] },
+    { id:'bedienung', de:'Fahrzeugbedienung', en:'Handling the car',
+      faults:[] }
+  ];
+  function categoryOf(id){
+    for (var i = 0; i < CATEGORIES.length; i++)
+      if (CATEGORIES[i].faults.indexOf(id) >= 0) return CATEGORIES[i];
+    return CATEGORIES[0];
+  }
+
   return {
+    CATEGORIES: CATEGORIES, categoryOf: categoryOf,
     SIGN_RANK: SIGN_RANK, FAULTS: FAULTS, REASON_TEXT: REASON_TEXT,
     signOf: signOf, lightFor: lightFor, rankOf: rankOf,
     hasGreenArrow: hasGreenArrow, priority: priority
@@ -2392,6 +2517,8 @@ var Sim = (function(){
     return true;
   }
 
+  function laneClass(v){ return v.kind === 'tram' ? 't' : (v.kind === 'bike' && v.lane) ? 'b' : 'c'; }
+
   function approachV(d, dec){
     if (d <= 0) return 0;
     return Math.sqrt(2*dec*d);
@@ -2426,8 +2553,31 @@ var Sim = (function(){
   }
   Ped.prototype.point = function(){
     var o = Geo.ARM_VEC[this.arm], p = Geo.rot90cw(o);
-    return { x:o.x*this.d + p.x*this.u, y:o.y*this.d + p.y*this.u };
+    /* in town a pedestrian belongs to one junction; a lesson's sits at 0,0 */
+    var nx = this.node ? this.node.x : 0, ny = this.node ? this.node.y : 0;
+    return { x:nx + o.x*this.d + p.x*this.u, y:ny + o.y*this.d + p.y*this.u };
   };
+  /* Does this pedestrian have the right to be let across by `veh`?
+     A zebra (and every crossing in a lesson) - always. Otherwise only
+     traffic turning into their road must let them go (Sec. 9 (3)). */
+  function pedPriority(ped, veh, exitSide){
+    if (ped.zebra || !ped.node) return true;
+    return exitSide && veh.turn() !== 'straight';
+  }
+  /* A waiting pedestrian who would step out right now if the road let
+     them: on their green at lights, whenever they like otherwise. */
+  function pedWants(ped){
+    return ped.state === 'waiting' && (ped.wants !== undefined ? ped.wants : ped.intent);
+  }
+  /* Someone walking across in front of this vehicle: from the moment they
+     step off the kerb until they are past its lane. (A lesson keeps its
+     original, simpler test: anyone on the carriageway.) */
+  function pedCrossing(ped, exitSide){
+    if (ped.state !== 'walking') return false;
+    if (!ped.node) return ped.onRoad();
+    var lane = exitSide ? CFG.HALF : -CFG.HALF;
+    return ped.dir*(ped.u - lane) < CFG.CAR_W/2 + 10 && Math.abs(ped.u) < CFG.BOX + 26;
+  }
   Ped.prototype.onRoad = function(){ return Math.abs(this.u) < CFG.BOX + 4; };
 
   /* ---------------- World ---------------- */
@@ -2623,19 +2773,22 @@ var Sim = (function(){
     /* --- pedestrians on a crossing ahead of us --- */
     for (var pi=0; pi<this.peds.length; pi++){
       var ped = this.peds[pi];
-      var cs = null;
+      if (ped.node !== veh.node || veh.kind === 'tram' || veh.kind === 'bike') continue;
+      var cs = null, exitSide = false;
       if (ped.arm === veh.fromArm && veh.crossS !== undefined && veh.s < veh.crossS) cs = veh.crossS;
-      if (ped.arm === veh.toArm && veh.exitCrossS !== undefined && veh.s < veh.exitCrossS) cs = veh.exitCrossS;
+      if (ped.arm === veh.toArm && veh.exitCrossS !== undefined && veh.s < veh.exitCrossS){ cs = veh.exitCrossS; exitSide = true; }
       if (cs === null) continue;
-      var blocking = ped.state === 'walking' ? ped.onRoad()
-                   : (ped.intent && ped.state === 'waiting');
-      /* only the half of the road we are about to drive over matters,
-         plus a safety margin on the far side                          */
-      if (ped.state === 'walking'){
-        var side = Geo.rot90cw(Geo.ARM_VEC[veh.fromArm]);
-        blocking = ped.onRoad();
-      }
-      if (blocking) want(approachV(cs - veh.s - 12, CFG.AI_DEC), 'ped', 'ped');
+      /* Nobody drives into a person on the road. Somebody waiting is let
+         across only by those who owe it to them - otherwise a car and a
+         pedestrian each wait for the other for ever. */
+      var blocking = ped.state === 'walking' ? pedCrossing(ped, exitSide)
+                   : (pedWants(ped) && pedPriority(ped, veh, exitSide));
+      if (!blocking) continue;
+      /* Sec. 11: people on the crossing we leave by means the junction
+         cannot be cleared - wait at our own line, not in everyone's way */
+      if (exitSide && veh.s < veh.lineS && ped.node)
+        want(approachV(veh.lineS - veh.s - 4, CFG.AI_DEC), 'ped', 'ped');
+      else want(approachV(cs - veh.s - 12, CFG.AI_DEC), 'ped', 'ped');
     }
     /* --- keeping our distance from the car in front --- */
     var lead = this.leaderOf(veh);
@@ -2723,8 +2876,9 @@ var Sim = (function(){
     for (var i=0;i<this.vehicles.length;i++){
       var o = this.vehicles[i];
       if (o === veh || o.done) continue;
-      /* a train on its track is never "the car in front" of a car */
-      if ((o.kind === 'tram') !== (veh.kind === 'tram')) continue;
+      /* a train on its track or a cyclist on a cycle path is never "the
+         car in front" of a car, nor the other way round */
+      if (laneClass(o) !== laneClass(veh)) continue;
       var dx = o.pos.x - veh.pos.x, dy = o.pos.y - veh.pos.y;
       if (Math.hypot(dx,dy) > 420) continue;
       var lon =  dx*c + dy*s;
@@ -2819,12 +2973,24 @@ var Sim = (function(){
 
   World.prototype.updatePed = function(ped, dt){
     if (ped.state === 'walking'){
+      /* in town: stop short of a car in the way - and if it just stands
+         there, walk round it the way people do */
+      if (ped.node && this.pedBlockedAhead && (ped.blockedFor || 0) < 1.5 && this.pedBlockedAhead(ped, 14)){
+        ped.blockedFor = (ped.blockedFor || 0) + dt;
+        return;
+      }
       ped.u += ped.dir*CFG.PED_V*dt;
       if (Math.abs(ped.u) > CFG.BOX + 26) ped.state = 'done';
       return;
     }
     if (ped.state !== 'waiting') return;
     ped.wait += dt;
+    /* in town: their light (if any) first, then the traffic */
+    if (ped.node && this.pedWants){
+      ped.wants = this.pedWants(ped);
+      if (ped.wants && this.pedMayGo(ped)) ped.state = 'walking';
+      return;
+    }
     /* step out when the nearest approaching car is far enough away or slow */
     var safe = true;
     for (var i=0;i<this.vehicles.length;i++){
@@ -2928,7 +3094,9 @@ var Sim = (function(){
       this.checkEntry();
     }
     /* --- stopped past the line while obliged to give way --- */
-    if (p.v < kmh(1.5) && p.s > p.lineS + 10 && p.s < p.lineS + 80 && this.mustGiveWayHere())
+    /* (waiting for people on the crossing beyond the line is where you
+       are meant to wait, so that does not count) */
+    if (p.v < kmh(1.5) && p.s > p.lineS + 10 && p.s < p.lineS + 80 && this.mustGiveWayHere() && !this.pedBlocking())
       this.fault('haltelinie');
 
     /* --- pedestrian crossings --- */
@@ -2994,6 +3162,7 @@ var Sim = (function(){
   World.prototype.faultForReason = function(reason){
     if (reason === 'einsatz') return 'einsatz_blockiert';
     if (reason === 'bus')     return 'bus_behindert';
+    if (reason === 'rad_abbiegen') return 'abbiegen_rad';
     return 'vorfahrt';
   };
 
@@ -3005,10 +3174,14 @@ var Sim = (function(){
     else if (o.fromArm === Geo.opposite(p.fromArm)){ de = ' aus dem Gegenverkehr'; en = ' coming the other way'; }
     var whatDe = o.kind === 'tram' ? 'Die Strassenbahn'
                : o.kind === 'bus'  ? 'Der Linienbus'
+               : o.kind === 'bike' ? 'Der Radfahrer'
                : o.emergency       ? 'Das Einsatzfahrzeug' : 'Das Fahrzeug';
     var whatEn = o.kind === 'tram' ? 'The tram'
                : o.kind === 'bus'  ? 'The bus'
+               : o.kind === 'bike' ? 'The cyclist'
                : o.emergency       ? 'The emergency vehicle' : 'The car';
+    /* a cyclist beside us going our way comes from behind, not from a side */
+    if (o.kind === 'bike' && o.fromArm === p.fromArm){ de = ' von hinten'; en = ' coming up behind you'; }
     return { de: whatDe + (de||''), en: whatEn + (en||'') };
   };
 
@@ -3023,13 +3196,22 @@ var Sim = (function(){
        lifted off precisely because you were waiting at the line. Once it
        has genuinely come to a stand we take it at its word and go. */
     var easingForUs = (o.brakeCause === p) && (o.stoppedFor || 0) < 3;
-    if (!easingForUs){
+    /* nor is a car that has only stopped to let people cross: it goes the
+       moment they are over, and it still has priority when it does */
+    var waitingForPeople = o.brakeKind === 'ped' && o.s < c.sb;
+    if (!easingForUs && !waitingForPeople){
       if (!isApproaching(o)) return false;      // waiting at its own line
       if (o.v < kmh(5)) return false;           // standing still
     }
     var freeV  = Math.max(o.v, o.cruise*0.8);
     var tOther = (c.sb - o.s - (o.len*0.5 + 18)) / Math.max(freeV, kmh(10));
-    var tClear = (c.sa + p.len*0.5 + 24 - p.s) / Math.max(p.v, kmh(14));
+    /* how long we really need to get clear from the speed we have now,
+       pulling away at a normal rate - from a standstill that is longer
+       than any steady speed would suggest */
+    var dist = Math.max(0, c.sa + p.len*0.5 + 24 - p.s);
+    var acc = (p.isPlayer ? CFG.ACC : CFG.AI_ACC) * 0.8;
+    var tAcc = (-p.v + Math.sqrt(p.v*p.v + 2*acc*dist)) / acc;
+    var tClear = Math.min(tAcc, dist / Math.max(p.v, kmh(14)) + 1.2);
     return tOther < tClear + 0.9;
   };
 
@@ -3056,10 +3238,13 @@ var Sim = (function(){
     return false;
   };
   World.prototype.pedBlocking = function(){
+    var p = this.player;
     for (var i=0;i<this.peds.length;i++){
       var ped = this.peds[i];
+      if (ped.node !== p.node) continue;
+      if (ped.arm !== p.fromArm && ped.arm !== p.toArm) continue;
       if (ped.state === 'walking' && ped.onRoad()) return true;
-      if (ped.state === 'waiting' && ped.intent) return true;
+      if (pedWants(ped) && pedPriority(ped, p, ped.arm === p.toArm)) return true;
     }
     return false;
   };
@@ -3116,21 +3301,35 @@ var Sim = (function(){
     var p = this.player;
     for (var i=0;i<this.peds.length;i++){
       var ped = this.peds[i];
+      if (ped.node !== p.node) continue;
+      var exitSide = (ped.arm === p.toArm && p.exitCrossS !== undefined);
       var cs = (ped.arm === p.fromArm && p.crossS !== undefined) ? p.crossS
-             : (ped.arm === p.toArm && p.exitCrossS !== undefined) ? p.exitCrossS : null;
+             : exitSide ? p.exitCrossS : null;
       if (cs === null) continue;
+      if (cs === p.crossS) exitSide = false;
       if (prevS < cs && p.s >= cs){
-        var turning = (ped.arm === p.toArm && p.toArm !== p.fromArm);
-        if (ped.state === 'walking' && ped.onRoad())
-          this.fault(turning ? 'abbiegen_fussgaenger' : 'fussgaenger', null,
+        var turning = exitSide && p.turn() !== 'straight';
+        var owed = pedPriority(ped, p, exitSide);
+        var id = turning ? 'abbiegen_fussgaenger' : 'fussgaenger';
+        /* Someone already crossing: a fault if they had the right to be
+           there, or - even if they had not - if we drove at them. */
+        if (pedCrossing(ped, exitSide) && (owed || this.pedInPath(p, ped, exitSide)))
+          this.fault(id, null,
             { de:'Der Fussgänger war schon auf der Fahrbahn.',
               en:'The pedestrian was already on the road.' });
-        else if (ped.state === 'waiting' && ped.intent && p.v > kmh(12))
-          this.fault(turning ? 'abbiegen_fussgaenger' : 'fussgaenger', null,
+        else if (pedWants(ped) && owed && p.v > kmh(12))
+          this.fault(id, null,
             { de:'Der Fussgänger wartete erkennbar am Bordstein.',
               en:'The pedestrian was clearly waiting at the kerb.' });
       }
     }
+  };
+  /* is a pedestrian on the road in, or about to walk into, our lane? */
+  World.prototype.pedInPath = function(p, ped, exitSide){
+    var lane = exitSide ? CFG.HALF : -CFG.HALF;       // our lane, across the crossing
+    var ahead = ped.u + ped.dir*CFG.PED_V*1.0;        // where they will be in a second
+    var lo = Math.min(ped.u, ahead), hi = Math.max(ped.u, ahead);
+    return hi > lane - (CFG.CAR_W/2 + 10) && lo < lane + (CFG.CAR_W/2 + 10);
   };
 
   /* ---------------- collisions ---------------- */
@@ -3159,11 +3358,13 @@ var Sim = (function(){
         }
       }
     }
-    for (i=0;i<this.peds.length;i++){
+    /* a car standing still does not run anybody over */
+    for (i=0;i<this.peds.length && p.v > kmh(3);i++){
       var ped = this.peds[i];
       if (ped.state === 'done') continue;
       var pp = ped.point();
-      for (k=0;k<pc.length;k++){
+      /* only the front of the car, driving on, can run somebody down */
+      for (k=Math.floor(pc.length/2);k<pc.length;k++){
         if (Math.hypot(pc[k].x-pp.x, pc[k].y-pp.y) < pc[k].r + 9){
           this.fault('ped_kollision');
           this.crashPoint = pp;
@@ -3278,7 +3479,8 @@ var Sim = (function(){
   };
 
   return { World:World, Vehicle:Vehicle, Ped:Ped, curveProfile:curveProfile,
-           CROSS_MID:CROSS_MID, CROSS_HALF:CROSS_HALF, proj:proj };
+           CROSS_MID:CROSS_MID, CROSS_HALF:CROSS_HALF, proj:proj, bodyCircles:bodyCircles,
+           pedCrossing:pedCrossing };
 })();
 
 /* ---------- js/scenarios.js ---------- */
@@ -3800,6 +4002,14 @@ var City = (function(){
   var ENTRY   = 250;               // where a junction's own geometry starts
   var LINK    = SPACING - 2*ENTRY; // straight bit between two junctions
 
+  /* Across the mouth of every arm, from the corner outwards, the way a
+     German street is laid out: the pedestrians' crossing, the cyclists'
+     crossing (where a cycle path runs alongside), then the stop line.
+     Distances from the junction centre along the arm. */
+  var CW    = { in:55, out:73, mid:64 };   // pedestrian crossing band (1.5 m)
+  var BIKE  = { off:79, half:6, V:18 };    // cycle path: centre off the road's centre line
+  var HOLD  = CFG.BOX + 49;                // where a car's front stops: behind both
+
   /* deterministic RNG so a seed always rebuilds the same town */
   function rng(seed){
     var x = seed || 12345;
@@ -3901,7 +4111,7 @@ var City = (function(){
     mainCol:2, mainRow:1,
     start:{ c:2, r:1, from:'N' },                // heading south into Weißer Stein
     stops:{ '4,1':'stop' },                      // one real Stop sign on the way
-    zebras:{},                                   // none until free drive has pedestrians
+    zebras:{ '1,3':'W', '4,2':'N', '0,3':'E' },  // Zeichen 350 on quiet side streets
     gruenpfeil:{ '2,3':['W'] },
     places:{ '2,1':'Weißer Stein', '2,2':'Lindenbaum' }
   };
@@ -3913,7 +4123,8 @@ var City = (function(){
     side:'E',
     track:{ S:78, N:114 },           // track centre per direction of travel
     bed:[58, 134],                   // gravel bed, between the two kerbs
-    carHold:152,                     // cars from the east wait before the tracks
+    bikeOff:146,                     // the cycle path runs on beyond the bed
+    carHold:164,                     // cars from the east wait before path and tracks
     tramHold:CFG.BOX + 22,           // trams wait before the road
     TRAM_L:300, TRAM_W:32            // one 25 m Stadtbahn car
   };
@@ -4036,6 +4247,21 @@ var City = (function(){
     }
     /* a stable look for every block of houses, from its own seed */
     this.blockSeed = (opts.seed || 7) * 131 + 17;
+
+    /* One-way cycle paths along both sides of the main roads, riding with
+       the traffic beside them. `from` is the arm a cyclist comes in on,
+       `off` how far to the right of their direction of travel the path
+       lies. Beside the U-Bahn the path runs on beyond the track bed. */
+    this.bikeLanes = [];
+    var self = this;
+    [['N', true], ['S', true], ['W', false], ['E', false]].forEach(function(l){
+      var isCol = l[1];
+      var index = isCol ? priCol : priRow;
+      if (index < 0) return;
+      var off = BIKE.off;
+      if (isCol && index === self.railCol && l[0] === 'S') off = RAIL.bikeOff;    // northbound, east side
+      self.bikeLanes.push({ id:self.bikeLanes.length, from:l[0], col:isCol, index:index, off:off });
+    });
     this.nodeAt = function(cc, rr){
       if (cc < 0 || rr < 0 || cc >= this.cols || rr >= this.rows) return null;
       return this.nodes[rr*this.cols + cc];
@@ -4117,7 +4343,7 @@ var City = (function(){
          waiting at it stands clear of the traffic crossing in front */
       var holdR = n.layout.type === 'roundabout' ? CFG.RING + 76
                 : (n.rail && m.step.from === n.rail.side) ? n.rail.carHold   // before the tracks
-                : CFG.BOX + 34;
+                : Math.hypot(HOLD, CFG.HALF);                    // behind the crossings
       var enterS = path.cum[m.startIdx];
       var exitS  = path.cum[m.endIdx];
       /* the give-way line: first point inside holdR, searched only
@@ -4174,11 +4400,55 @@ var City = (function(){
     return (RAIL_CONFLICT[key] = c ? { st:c.sa, sc:c.sb } : null);
   }
 
+  /* ---------------- cycle paths ---------------- */
+  /* A cyclist's run along one side of a main road, with the landmarks for
+     every junction on the way - the same shape as a car's or a train's,
+     so the rule engine treats them all alike. The stop line is short of
+     the side street the path crosses. */
+  function bikeFrame(from, off){
+    var dir = Geo.mul(Geo.ARM_VEC[from], -1), right = Geo.rot90cw(dir);
+    return { dir:dir, right:right, off:off };
+  }
+  Map.prototype.bikeRoute = function(lane){
+    var nodes = [], i;
+    var n = lane.col ? this.rows : this.cols;
+    for (i = 0; i < n; i++) nodes.push(lane.col ? this.nodeAt(lane.index, i) : this.nodeAt(i, lane.index));
+    /* in the direction of travel */
+    var f = bikeFrame(lane.from, lane.off);
+    nodes.sort(function(a, b){ return (a.x*f.dir.x + a.y*f.dir.y) - (b.x*f.dir.x + b.y*f.dir.y); });
+    var run = ENTRY + LINK*0.8;
+    var a = nodes[0], b = nodes[nodes.length - 1];
+    function at(node, t){ return { x:node.x + f.dir.x*t + f.right.x*f.off, y:node.y + f.dir.y*t + f.right.y*f.off }; }
+    var p0 = at(a, -run), p1 = at(b, run);
+    var path = new Geo.Path([p0, p1]);
+    function sOf(node, t){ var q = at(node, t); return Math.hypot(q.x - p0.x, q.y - p0.y); }
+    var steps = nodes.map(function(node){
+      return { node:node, from:lane.from, to:Geo.opposite(lane.from),
+               enterS:sOf(node, -ENTRY), exitS:sOf(node, ENTRY),
+               junctionS:sOf(node, -(CFG.BOX + 14)) };
+    });
+    return { path:path, steps:steps };
+  };
+  /* where a cyclist on this path and a car making from->to meet, both
+     measured from the start of the junction's geometry */
+  var BIKE_CONFLICT = {};
+  function bikeConflict(from, off, cfrom, cto){
+    var key = from + off + '|' + cfrom + cto;
+    if (key in BIKE_CONFLICT) return BIKE_CONFLICT[key];
+    var f = bikeFrame(from, off);
+    var bike = new Geo.Path([
+      { x:-f.dir.x*ENTRY + f.right.x*off, y:-f.dir.y*ENTRY + f.right.y*off },
+      { x: f.dir.x*ENTRY + f.right.x*off, y: f.dir.y*ENTRY + f.right.y*off }]);
+    var car = new Geo.Path(junctionPiece(cfrom, cto, 'cross'));
+    var c = Geo.conflictOf(bike, car, CFG.CAR_W/2 + BIKE.half + 10);
+    return (BIKE_CONFLICT[key] = c ? { sb:c.sa, sc:c.sb } : null);
+  }
+
   return {
-    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK, RAIL:RAIL,
+    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK, RAIL:RAIL, CW:CW, BIKE:BIKE, HOLD:HOLD,
     Map:Map, junctionPiece:junctionPiece,
     localConflict:localConflict, buildConflictTable:buildConflictTable,
-    railConflict:railConflict,
+    railConflict:railConflict, bikeConflict:bikeConflict,
     rng:rng
   };
 })();
@@ -4215,6 +4485,9 @@ var Drive = (function(){
       this.sc.title = 'Frankfurt-Eschersheim · Weißer Stein';
       this.sc.en    = 'Frankfurt-Eschersheim · Weißer Stein';
     }
+    /* an exam: a set time, no help, no stopping to explain */
+    this.exam = opts.exam ? { seconds:(opts.exam.minutes || 15)*60 } : null;
+    if (this.exam){ this.sc.title = 'Prüfungsfahrt'; this.sc.en = 'Driving test'; }
     this.t = 0;
     this.vehicles = [];
     this.peds = [];
@@ -4257,6 +4530,8 @@ var Drive = (function(){
       this.spawnTram('S', 900 + this.rand()*2500);
       this.spawnTram('N', 900 + this.rand()*2500);
     }
+    this.manageBikes(true);
+    this.managePeds();
   };
 
   /* ---------------- the U-Bahn ---------------- */
@@ -4343,9 +4618,170 @@ var Drive = (function(){
       veh.enterS    = st.enterS;
       veh.exitS     = st.exitS;
       veh.crossS = undefined; veh.exitCrossS = undefined;
-      var cr = st.node.layout.crossings;
-      if (cr && cr.indexOf(st.from) >= 0) veh.crossS = veh.lineS - 26;
+      /* Every arm has a pedestrians' crossing across its mouth. Note where
+         this car passes the one on the arm it comes in on and the one on
+         the arm it leaves by - the points the examiner and the town's
+         drivers check pedestrians against. Trains and bikes cross none. */
+      /* Both are where the car's centre is when its bumper reaches the
+         line people walk along: stopping a little short of either keeps
+         the whole car off the crossing. */
+      if (veh.kind !== 'tram' && veh.kind !== 'bike' && st.node.layout.type !== 'roundabout'){
+        var reach = City.CW.mid + 4 + veh.len*0.5;
+        veh.crossS = st.enterS + (City.ENTRY - reach);
+        var n = st.node, o = Geo.ARM_VEC[st.to];
+        for (var s = st.junctionS; s <= st.exitS; s += 2){
+          var q = veh.path.at(s);
+          if ((q.x - n.x)*o.x + (q.y - n.y)*o.y >= City.CW.mid - veh.len*0.5){ veh.exitCrossS = s; break; }
+        }
+      }
     }
+  };
+
+  /* ---------------- cyclists ---------------- */
+  var BIKE_COLORS = ['#2b5d8a','#3d3f44','#8b2e2e','#2f6b4f','#c9a227','#6a4a8c','#d8d8d4'];
+  DriveWorld.prototype.spawnBike = function(lane, s){
+    var r = this.map.bikeRoute(lane);
+    var v = new Sim.Vehicle({
+      path:r.path, fromArm:lane.from, toArm:Geo.opposite(lane.from),
+      kind:'bike', len:21, wid:8,
+      color:BIKE_COLORS[Math.floor(this.rand()*BIKE_COLORS.length)],
+      cruise:kmh(15 + this.rand()*7), v:kmh(16), s:s || 0, lane:lane,
+      id:'b' + (this.nextId = (this.nextId || 0) + 1)
+    });
+    v.look = this.rand();
+    v.steps = r.steps; v.stepIdx = 0;
+    this.syncStep(v, true);
+    v.pos = v.path.at(v.s);
+    for (var i = 0; i < this.vehicles.length; i++)
+      if (this.vehicles[i].kind === 'bike' && Geo.dist(this.vehicles[i].pos, v.pos) < 90) return null;
+    this.vehicles.push(v);
+    return v;
+  };
+  DriveWorld.prototype.manageBikes = function(initial){
+    var self = this, lanes = this.map.bikeLanes || [];
+    lanes.forEach(function(lane){
+      var on = self.vehicles.filter(function(v){ return v.kind === 'bike' && v.lane === lane && !v.done; });
+      if (initial){
+        self.spawnBike(lane, 300 + self.rand()*1800);
+        self.spawnBike(lane, 2500 + self.rand()*1800);
+      } else if (on.length < 2 && self.rand() < 0.25) self.spawnBike(lane, 0);
+    });
+  };
+
+  /* ---------------- pedestrians ---------------- */
+  /* People waiting at the corners of the junctions around you, crossing
+     the side of a junction they are standing at. They go when it is safe
+     for them: on their own green at lights, in front of traffic turning
+     in (which must let them), never into traffic coming along the road
+     they cross - except on a zebra, where everyone must stop for them. */
+  var PED_TARGET = 12;
+  DriveWorld.prototype.managePeds = function(){
+    var p = this.player, self = this;
+    this.peds = this.peds.filter(function(ped){
+      if (ped.state === 'done') return false;
+      var pt = ped.point();
+      if (Geo.dist(pt, p.pos) > 900) return false;
+      return !(ped.state === 'waiting' && ped.wait > 45);
+    });
+    var tries = 0;
+    while (this.peds.length < PED_TARGET && tries++ < 12){
+      var n = this.map.nodes[Math.floor(this.rand()*this.map.nodes.length)];
+      var d = Math.hypot(n.x - p.pos.x, n.y - p.pos.y);
+      if (d > 700 || n.layout.type === 'roundabout') continue;
+      var arms = n.arms.filter(function(a){ return !(n.rail && a === n.rail.side); });
+      if (!arms.length) continue;
+      var arm = arms[Math.floor(this.rand()*arms.length)];
+      var right = this.rand() < 0.5;
+      var clash = this.peds.some(function(q){ return q.node === n && q.arm === arm; });
+      if (clash) continue;
+      var zebra = !!(n.layout.crossings && n.layout.crossings.indexOf(arm) >= 0);
+      var ped = new Sim.Ped({
+        arm:arm, d:City.CW.mid, node:n, zebra:zebra,
+        u0: right ? (CFG.BOX + 22) : -(CFG.BOX + 22), dir: right ? -1 : 1,
+        start:'waiting', kid: this.rand() < 0.1, intent:true
+      });
+      ped.look = this.rand();
+      ped.wait = -this.rand()*4;                   // not everyone sets off at once
+      this.peds.push(ped);
+    }
+    void self;
+  };
+  /* Would walking on bring this pedestrian up against a vehicle's body
+     somewhere along the next `span` units of their crossing? People wait
+     for a car stood in their way; they do not walk into it. */
+  DriveWorld.prototype.pedBlockedAhead = function(ped, span){
+    var o = Geo.ARM_VEC[ped.arm], q = Geo.rot90cw(o);
+    var nx = ped.node.x, ny = ped.node.y;
+    for (var i = 0; i < this.vehicles.length; i++){
+      var v = this.vehicles[i];
+      if (v.done || v.kind === 'tram') continue;
+      if (Math.abs(v.pos.x - nx) > 260 || Math.abs(v.pos.y - ny) > 260) continue;
+      var circ = Sim.bodyCircles(v);
+      for (var du = 4; du <= span; du += 8){
+        var u = ped.u + ped.dir*du;
+        if (Math.abs(u) > CFG.BOX + 30) break;
+        var px = nx + o.x*ped.d + q.x*u, py = ny + o.y*ped.d + q.y*u;
+        for (var k = 0; k < circ.length; k++)
+          if (Math.hypot(circ[k].x - px, circ[k].y - py) < circ[k].r + 8) return true;
+      }
+    }
+    return false;
+  };
+  /* how long the light for `arm` has shown green */
+  function greenFor(n, arm, t){
+    if (Rules.lightFor(n, arm, t) !== 'green') return -1;
+    var k = 0;
+    while (k < 40 && Rules.lightFor(n, arm, t - (k + 1)*0.5) === 'green') k++;
+    return k*0.5;
+  }
+  /* Is it this pedestrian's turn by the rules - light, or no light? */
+  DriveWorld.prototype.pedWants = function(ped){
+    if (!ped.intent || ped.wait < 0) return false;
+    var n = ped.node;
+    /* Somebody arriving at the kerb does not step up to it as a car
+       arrives that could no longer stop - they show they want to cross
+       while the traffic can still react, and then keep wanting to. */
+    if (!ped.wants && this.pedCarClose(ped, 2.6)) return false;
+    if (!n.lights) return true;
+    /* they walk with the traffic running alongside, and only set off
+       early in its green so they are across before it ends */
+    var g = greenFor(n, Geo.leftOf(ped.arm), this.t);
+    return g >= 0 && g < 6;
+  };
+  /* ...and is it safe for them to go? */
+  DriveWorld.prototype.pedMayGo = function(ped){
+    var n = ped.node;
+    if (this.pedBlockedAhead(ped, 60)) return false;     // a car standing on the crossing
+    for (var i = 0; i < this.vehicles.length; i++){
+      var v = this.vehicles[i];
+      if (v.done || v.node !== n || v.kind === 'tram') continue;
+      /* coming along the road they want to cross */
+      if (v.fromArm === ped.arm && v.crossS !== undefined && v.s < v.crossS){
+        var tt = (v.crossS - v.s) / Math.max(v.v, 1);
+        if (v.v > kmh(6) && tt < (ped.zebra ? 1.6 : 3.4)) return false;
+      }
+      /* turning in: they have priority, but nobody steps in front of a
+         car about to reach them, however slowly it is rolling */
+      if (v.toArm === ped.arm && v.exitCrossS !== undefined && v.s < v.exitCrossS){
+        var te = (v.exitCrossS - v.s) / Math.max(v.v, 1);
+        /* a car already turning through the junction has committed: do
+           not strand it in the middle of everybody else's way */
+        var committed = v.s > v.lineS;
+        if (v.v > kmh(3) && te < (committed ? 3.5 : 2.0)) return false;
+      }
+    }
+    return true;
+  };
+  /* is a car coming at this crossing, within `secs`, too fast to stop easily? */
+  DriveWorld.prototype.pedCarClose = function(ped, secs){
+    for (var i = 0; i < this.vehicles.length; i++){
+      var v = this.vehicles[i];
+      if (v.done || v.node !== ped.node || v.kind === 'tram' || v.kind === 'bike') continue;
+      var cs = (v.fromArm === ped.arm) ? v.crossS : (v.toArm === ped.arm) ? v.exitCrossS : undefined;
+      if (cs === undefined || v.s >= cs || v.v < kmh(8)) continue;
+      if ((cs - v.s) / v.v < secs) return true;
+    }
+    return false;
   };
 
   /* ---------------- rules context ---------------- */
@@ -4360,6 +4796,17 @@ var Drive = (function(){
     if (!a.node || !b.node || a.node !== b.node) return null;
     /* a train against a car: its own table, since a train on the main
        road still crosses the car turning off it from the same arm */
+    /* a cyclist on a cycle path: likewise their own table */
+    var ab = a.kind === 'bike', bb = b.kind === 'bike';
+    if (ab || bb){
+      if (ab && bb) return null;
+      var bike = ab ? a : b, other = ab ? b : a;
+      if (other.kind === 'tram') return null;
+      var bc = City.bikeConflict(bike.lane.from, bike.lane.off, other.fromArm, other.toArm);
+      if (!bc) return null;
+      var sbk = bike.enterS + bc.sb, soc = other.enterS + bc.sc;
+      return ab ? { sa:sbk, sb:soc } : { sa:soc, sb:sbk };
+    }
     var at = a.kind === 'tram', bt = b.kind === 'tram';
     if (at || bt){
       if (at && bt) return null;                  // separate tracks
@@ -4423,12 +4870,14 @@ var Drive = (function(){
       if (!far && !finished && !wedged) keep.push(v);
     }
     this.vehicles = keep;
-    var cars = keep.filter(function(v){ return v.kind !== 'tram'; }).length;
+    var cars = keep.filter(function(v){ return v.kind !== 'tram' && v.kind !== 'bike'; }).length;
     while (cars < TARGET_TRAFFIC + 1) {
       if (!this.spawnTraffic()) break;
       cars++;
     }
     this.manageTrams();
+    this.manageBikes(false);
+    this.managePeds();
   };
 
   /* ---------------- update ---------------- */
@@ -4442,9 +4891,19 @@ var Drive = (function(){
       if (!input.throttle && !input.brake) return;
       this.hold = null;
     }
+    /* where the driver has looked, and when: a glance over a shoulder is
+       a head turned well round, the mirror a key press */
+    var seen = this.seen || (this.seen = {});
+    if ((input.yaw || 0) > 0.95)  seen.right = this.t;
+    if ((input.yaw || 0) < -0.95) seen.left  = this.t;
+    if (input.mirror) seen.mirror = this.t;
+    /* the exam is over when the examiner's time is */
+    if (this.exam && this.t >= this.exam.seconds){ this.finish('exam_time'); return; }
     if (this.t - (this.lastSnap === undefined ? -1 : this.lastSnap) >= SNAP_EVERY) this.remember();
     this.t += dt;
     var i;
+
+    for (i = 0; i < this.peds.length; i++) this.updatePed(this.peds[i], dt);
 
     for (i = 0; i < this.vehicles.length; i++){
       var veh = this.vehicles[i];
@@ -4517,6 +4976,13 @@ var Drive = (function(){
     this.lastFault[id] = this.t;
     var rec = { id:id, reason:reason || null, detail:detail || null, t:this.t };
     this.faults.push(rec);
+    /* In the exam nobody stops to explain: small faults are noted
+       silently, and a serious one ends the test on the spot. */
+    if (this.exam){
+      var d = Rules.FAULTS[id];
+      if (d && d.sev === 'major'){ this.exam.failedBy = rec; this.finish('exam_fail'); }
+      return;
+    }
     this.pending = rec;
     this.paused = true;
     this.player.faultedHere = true;
@@ -4562,6 +5028,7 @@ var Drive = (function(){
 
   DriveWorld.prototype.remember = function(){
     var snap = { vehicles:copyFleet(this.vehicles), limit:this.sc.limit,
+                 peds:this.peds.map(copyVehicle),
                  lastFault:copyMap(this.lastFault || {}) }, self = this;
     SCALARS.forEach(function(k){ snap[k] = self[k]; });
     this.history.push(snap);
@@ -4582,6 +5049,7 @@ var Drive = (function(){
     this.history.length = i + 1;           // the future we are undoing
 
     this.vehicles = copyFleet(snap.vehicles);
+    this.peds = snap.peds.map(copyVehicle);
     for (var j = 0; j < this.vehicles.length; j++)
       if (this.vehicles[j].isPlayer) this.player = this.vehicles[j];
     SCALARS.forEach(function(k){ self[k] = snap[k]; });
@@ -4605,6 +5073,35 @@ var Drive = (function(){
     return true;
   };
 
+  /* ---------------- observation: mirror and shoulder ---------------- */
+  /* Checked as you commit to a turn. The shoulder check must come in the
+     last few seconds before it; the mirror a little earlier is fine. */
+  DriveWorld.prototype.checkEntry = function(){
+    Sim.World.prototype.checkEntry.call(this);
+    var p = this.player, turn = p.turn(), n = p.node;
+    if ((turn !== 'left' && turn !== 'right') || n.layout.type === 'roundabout') return;
+    var seen = this.seen || {};
+    var looked = seen[turn] !== undefined && this.t - seen[turn] < 6;
+    var mirrored = seen.mirror !== undefined && this.t - seen.mirror < 10;
+    var side = turn === 'right' ? { de:'rechts', en:'right' } : { de:'links', en:'left' };
+    if (!looked){
+      var cycle = this.cyclePathAcross(n, p.fromArm, turn);
+      this.fault(cycle ? 'schulterblick_rad' : 'schulterblick', null,
+        { de:'Beim Abbiegen nach ' + side.de + ' kein Blick über die ' + side.de + 'e Schulter.',
+          en:'You turned ' + side.en + ' without looking over your ' + side.en + ' shoulder.' });
+    } else if (!mirrored){
+      this.fault('spiegel');
+    }
+  };
+  /* Does turning this way off `fromArm` at node `n` take us across a
+     cycle path? Right: the one riding beside us; left: the oncoming one. */
+  DriveWorld.prototype.cyclePathAcross = function(n, fromArm, turn){
+    var want = turn === 'right' ? fromArm : Geo.opposite(fromArm);
+    return (this.map.bikeLanes || []).some(function(l){
+      return l.from === want && (l.col ? n.c === l.index : n.r === l.index);
+    });
+  };
+
   /* A knock stops you and gets explained, but the drive carries on. */
   DriveWorld.prototype.finish = function(why){
     if (why === 'crash'){ this.player.v = 0; return; }
@@ -4624,8 +5121,26 @@ var Drive = (function(){
     var fixed = this.fixed.map(function(f){
       return { id:f.id, def:Rules.FAULTS[f.id], reason:f.reason, detail:f.detail };
     });
-    return { score:Math.max(0, score), passed: major === 0 && this.cleared >= this.target,
-             faults:rows, fixed:fixed, reason:this.endReason, cleared:this.cleared };
+    /* the five areas the examiner scores, each with what went wrong in it */
+    var cats = Rules.CATEGORIES.map(function(c){
+      return { cat:c, faults:rows.filter(function(r){ return c.faults.indexOf(r.id) >= 0; }) };
+    });
+    var rep = { score:Math.max(0, score), passed: major === 0 && this.cleared >= this.target,
+                faults:rows, fixed:fixed, reason:this.endReason, cleared:this.cleared, categories:cats };
+    if (this.exam) rep.exam = this.examVerdict(rows, major);
+    return rep;
+  };
+  /* Like the real test: one serious fault fails it; so do many small ones,
+     or the same small one again and again - that shows it is not a slip. */
+  DriveWorld.prototype.examVerdict = function(rows, major){
+    var minors = rows.filter(function(r){ return r.def.sev === 'minor'; });
+    var byId = {};
+    minors.forEach(function(r){ byId[r.id] = (byId[r.id] || 0) + 1; });
+    var repeated = Object.keys(byId).filter(function(k){ return byId[k] >= 3; });
+    var why = major ? 'major' : minors.length >= 5 ? 'many' : repeated.length ? 'repeated'
+            : this.endReason === 'exam_time' ? null : 'ended';
+    return { passed: !why, why:why, minors:minors.length, repeated:repeated,
+             failedBy:this.exam.failedBy || null, seconds:this.exam.seconds, driven:this.t };
   };
 
   /* ---------------- navigation ---------------- */
@@ -4699,7 +5214,8 @@ var CityView = (function(){
 
   /* how far back from a street's centre line the houses start */
   function setback(map, isCol, index, side){
-    if (isCol && index === map.railCol && side > 0) return City.RAIL.bed[1] + 6 + WALK;
+    /* beside the U-Bahn: its bed, then the cycle path, then the pavement */
+    if (isCol && index === map.railCol && side > 0) return City.RAIL.bed[1] + 6 + 12 + WALK;
     return KERB + WALK;
   }
 
@@ -4809,8 +5325,9 @@ var CityView = (function(){
         var k = ((t - from) % S + S) % S;
         if (k < 190 || k > S - 190) continue;           // keep the junctions clear
         [-1, 1].forEach(function(side){
-          var off = setback(map, isCol, i, side) - WALK*0.35;
-          if (isCol && i === map.railCol && side > 0) off = City.RAIL.bed[1] + 6 + WALK*0.35;
+          /* along a main road the cycle path runs where the trees would
+             stand, so they move back to the edge of the pavement */
+          var off = setback(map, isCol, i, side) - (main ? 4 : WALK*0.35);
           var px = isCol ? line + side*off : t, py = isCol ? t : line + side*off;
           if (rand() < (main ? 0.9 : 0.55)) trees.push({ x:px, y:py, h:(7 + rand()*5)*M, r:(2.2 + rand()*1.4)*M, tone:rand() });
         });
@@ -4842,7 +5359,17 @@ var CityView = (function(){
              tracks:[x + City.RAIL.track.S, x + City.RAIL.track.N], S:S };
   }
 
-  return { build:build, railBed:railBed, KERB:KERB, WALK:WALK, rng:rng };
+  /* the cycle paths, as strips: each with its centre line from a to b
+     (world units), its half-width, and the side streets it crosses */
+  function bikePaths(map){
+    return (map.bikeLanes || []).map(function(lane){
+      var r = map.bikeRoute(lane);
+      return { a:r.path.pts[0], b:r.path.pts[r.path.pts.length - 1], half:City.BIKE.half,
+               col:lane.col, lane:lane, nodes:r.steps.map(function(st){ return st.node; }) };
+    });
+  }
+
+  return { build:build, railBed:railBed, bikePaths:bikePaths, KERB:KERB, WALK:WALK, rng:rng };
 })();
 
 /* ---------- js/render.js ---------- */
@@ -4954,6 +5481,12 @@ var Render = (function(){
       ctx.save(); ctx.translate(n.x, n.y);
       drawJunctionGround(ctx, n, reach);
       ctx.restore();
+    });
+    ctx.fillStyle = night ? '#4a2a22' : '#b86a58';
+    CityView.bikePaths(map).forEach(function(bp){
+      var h = bp.half;
+      ctx.fillRect(Math.min(bp.a.x, bp.b.x) - (bp.col ? h : 0), Math.min(bp.a.y, bp.b.y) - (bp.col ? 0 : h),
+                   Math.abs(bp.b.x - bp.a.x) + (bp.col ? 2*h : 0), Math.abs(bp.b.y - bp.a.y) + (bp.col ? 0 : 2*h));
     });
     if (bed){
       ctx.strokeStyle = COL.rail; ctx.lineWidth = 2.5;
@@ -5115,9 +5648,16 @@ var Render = (function(){
       var lit   = sc.lights && sc.lights.groups[arm];
       var lineX = ring ? CFG.RING + CFG.BOX + 8
                 : (sc.rail && arm === sc.rail.side) ? sc.rail.carHold - 2
-                : sc.x !== undefined ? CFG.BOX + 30 : CFG.BOX + 8;
+                : sc.x !== undefined ? City.HOLD - 3 : CFG.BOX + 8;
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      var town = sc.x !== undefined;
+      if (hasCross && !town) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      /* in town the zebra sits just outside the box, inside the line */
+      if (hasCross && town){
+        ctx.fillStyle = COL.paint;
+        for (var zy = -CFG.BOX + 4; zy < CFG.BOX - 3; zy += 14) ctx.fillRect(City.CW.in, zy, City.CW.out - City.CW.in, 7);
+        hasCross = false;
+      }
 
       if (lit || sign === 'stop'){
         ctx.fillStyle = COL.paint;
@@ -5324,6 +5864,15 @@ var Render = (function(){
     ctx.fillStyle = COL.shadow;
     roundRect(ctx, -L/2+3, -W/2+4, L, W, 7); ctx.fill();
 
+    if (v.kind === 'bike'){
+      ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-L/2, -1.5, L, 3);
+      ctx.fillStyle = v.color || '#2b5d8a';
+      ctx.beginPath(); ctx.ellipse(-2, 0, 5, 4.5, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#e8e8e2';
+      ctx.beginPath(); ctx.arc(1, 0, 2.6, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      return;
+    }
     if (v.kind === 'tram'){
       ctx.fillStyle = v.color || '#d8dde3';
       roundRect(ctx, -L/2, -W/2, L, W, 8); ctx.fill();
@@ -5391,8 +5940,8 @@ var Render = (function(){
     drawRoute(ctx, world);
     ctx.save(); ctx.translate(j.x || 0, j.y || 0);
     drawSigns(ctx, world, scale);
-    drawPeds(ctx, world);
     ctx.restore();
+    drawPeds(ctx, world);             // a pedestrian knows where it stands
     world.vehicles.forEach(function(v){ if (!v.done) drawVehicle(ctx, v, world.t); });
     ctx.save(); ctx.translate(j.x || 0, j.y || 0);
     drawLights(ctx, world);
@@ -5738,7 +6287,7 @@ var POV = (function(){
   function stopLineX(sc, arm, ring){
     if (ring) return CFG.RING + CFG.BOX + 8;
     if (sc.rail && arm === sc.rail.side) return sc.rail.carHold - 2;
-    if (sc.x !== undefined) return CFG.BOX + 30;
+    if (sc.x !== undefined) return City.HOLD - 3;
     return CFG.BOX + 8;
   }
 
@@ -5801,7 +6350,14 @@ var POV = (function(){
       var lit  = sc.lights && sc.lights.groups[arm];
       var lineX = stopLineX(sc, arm, ring);
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      var town = sc.x !== undefined;
+      if (hasCross && !town) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      /* in town the crossing sits just outside the box, inside the line */
+      if (hasCross && town){
+        for (var zy = -CFG.BOX + 4; zy < CFG.BOX - 3; zy += 14)
+          armQuad(ctx, cam, arm, City.CW.in, zy, City.CW.out, zy + 7, COL.paint, ox, oy);
+        hasCross = false;
+      }
 
       if (lit || sign === 'stop'){
         armQuad(ctx, cam, arm, lineX, -CFG.BOX, lineX + 7, 0, COL.paint, ox, oy);
@@ -5861,6 +6417,14 @@ var POV = (function(){
 
     var nodes = nearNodes(world, cam, FAR_CUT + City.SPACING);
     nodes.forEach(function(n){ drawJunctionGround(ctx, cam, n, reach, true); });
+
+    /* the red cycle paths, over pavement and side streets alike */
+    CityView.bikePaths(map).forEach(function(bp){
+      var h = bp.half;
+      fillPoly(ctx, cam, rect(Math.min(bp.a.x, bp.b.x) - (bp.col ? h : 0), Math.min(bp.a.y, bp.b.y) - (bp.col ? 0 : h),
+                              Math.max(bp.a.x, bp.b.x) + (bp.col ? h : 0), Math.max(bp.a.y, bp.b.y) + (bp.col ? 0 : h), 0.2),
+               night ? '#4a2a22' : '#b86a58');
+    });
 
     /* rails: over the bed and across the roads, sleepers only up close */
     if (bed){
@@ -5987,7 +6551,28 @@ var POV = (function(){
     if (v.kind === 'bus')  return 2.85*M;
     return 0.98*M;
   }
+  /* a cyclist, seen side-on or from behind: close enough as a sprite */
+  function bikeSprite(color){
+    return sprite('bike' + color + (night ? 'n' : 'd'), 64, 96, function(g, w, h){
+      g.strokeStyle = night ? '#222' : '#1b1b1b'; g.lineWidth = 4;
+      g.beginPath(); g.arc(w*0.5, h*0.82, w*0.14, 0, Math.PI*2); g.stroke();
+      g.strokeStyle = color; g.lineWidth = 4;
+      g.beginPath(); g.moveTo(w*0.5, h*0.82); g.lineTo(w*0.5, h*0.52); g.stroke();
+      g.fillStyle = shade(color, night ? 0.5 : 1);
+      g.fillRect(w*0.32, h*0.22, w*0.36, h*0.32);          // jacket
+      g.fillStyle = '#e2bf9d';
+      g.beginPath(); g.arc(w*0.5, h*0.14, w*0.11, 0, Math.PI*2); g.fill();
+      g.fillStyle = '#e8e8e2';
+      g.beginPath(); g.arc(w*0.5, h*0.11, w*0.12, Math.PI, Math.PI*2); g.fill();
+      g.fillStyle = '#c0281c'; g.fillRect(w*0.44, h*0.60, w*0.12, h*0.04);
+    });
+  }
   function drawVehicle(ctx, cam, v, t){
+    if (v.kind === 'bike'){
+      var bb = billboard(cam, v.pos.x, v.pos.y, 0, 1.85*M);
+      drawBillboard(ctx, bb, bikeSprite(v.color || '#2b5d8a'), 0.9, 1.85);
+      return;
+    }
     drawShadow(ctx, cam, v);
     if (v.kind === 'tram') drawTram(ctx, cam, v);
     else if (v.kind === 'bus') drawBus(ctx, cam, v);
@@ -6485,6 +7070,7 @@ var GL3D = (function(){
     function std(o){ return new THREE.MeshStandardMaterial(o); }
     MAT = {
       asphalt: std({ color:0x9a9a9a, roughness:0.92 }),
+      cycle:   std({ color:0xc2604a, roughness:0.9 }),          // red cycle-path asphalt
       pavers:  std({ color:0xcfcac2, roughness:0.9 }),
       gravel:  std({ color:0xb8b0a4, roughness:1.0 }),
       grass:   std({ color:0xa8b890, roughness:1.0 }),
@@ -6518,7 +7104,7 @@ var GL3D = (function(){
   var TILE = { asphalt:5, pavers:2.4, gravel:3, grass:4, field:6 };
   function applyTextures(){
     var M = mats();
-    [['asphalt','asphalt'], ['pavers','pavers'], ['gravel','gravel'], ['grass','grass'], ['field','grass'], ['kerb','pavers']]
+    [['asphalt','asphalt'], ['cycle','asphalt'], ['pavers','pavers'], ['gravel','gravel'], ['grass','grass'], ['field','grass'], ['kerb','pavers']]
       .forEach(function(p){
         var d = tex[p[1] + '_diff'], n = tex[p[1] + '_nor'];
         if (d && M[p[0]].map !== d){ M[p[0]].map = d; M[p[0]].needsUpdate = true; }
@@ -6703,7 +7289,7 @@ var GL3D = (function(){
   function stopLineX(sc, arm, ring){
     if (ring) return CFG.RING + CFG.BOX + 8;
     if (sc.rail && arm === sc.rail.side) return sc.rail.carHold - 2;
-    if (sc.x !== undefined) return CFG.BOX + 30;
+    if (sc.x !== undefined) return City.HOLD - 3;
     return CFG.BOX + 8;
   }
   var KERB_W = 2.6, KERB_H = 0.13;             // world units wide, metres high
@@ -6755,8 +7341,20 @@ var GL3D = (function(){
       var lit = sc.lights && sc.lights.groups[arm];
       var lineX = stopLineX(sc, arm, ring);
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      if (hasCross && !city) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
       if (lit || sign === 'stop') armFlat(paint, arm, lineX, -B, lineX + 6, 0, ox, oy, 0.045);
+      /* in town the people cross just outside the junction box: a zebra
+         where there is one, the broken lines of a Furt at the lights */
+      if (city && !(sc.rail && arm === sc.rail.side)){
+        if (hasCross){
+          for (var zy = -B + 4; zy < B - 3; zy += 14) armFlat(paint, arm, City.CW.in, zy, City.CW.out, zy + 7, ox, oy, 0.045);
+        } else if (sc.lights){
+          for (var fy = -B; fy < B; fy += 10){
+            armFlat(paint, arm, City.CW.in, fy, City.CW.in + 1.6, fy + 5, ox, oy, 0.045);
+            armFlat(paint, arm, City.CW.out - 1.6, fy, City.CW.out, fy + 5, ox, oy, 0.045);
+          }
+        }
+      }
       else if (sign === 'yield' || sign === 'ringentry' || sign === 'exit'){
         /* the Haifischzähne: a row of white triangles */
         for (var y = -B + 3; y < -4; y += 12){
@@ -6764,7 +7362,7 @@ var GL3D = (function(){
           paint.tri([p0[0]*U,0.045,p0[1]*U], [p1[0]*U,0.045,p1[1]*U], [p2[0]*U,0.045,p2[1]*U], [0,1,0], [[0,0],[1,0],[0,1]]);
         }
       }
-      if (hasCross){
+      if (hasCross && !city){
         for (var yy = -B + 5; yy < B - 4; yy += 14)
           armFlat(paint, arm, Sim.CROSS_MID - Sim.CROSS_HALF, yy, Sim.CROSS_MID + Sim.CROSS_HALF, yy + 7, ox, oy, 0.045);
       }
@@ -6973,6 +7571,7 @@ var GL3D = (function(){
     var P = {
       ground:new Builder(), yard:new Builder(), bed:new Builder(), road:new Builder(), kerb:new Builder(),
       paint:new Builder(), pave:new Builder(), island:new Builder(),
+      bike:new Builder(), bikeX:new Builder(),
       wallA:new Builder(), wallB:new Builder(), shop:new Builder(), home:new Builder(),
       gable:new Builder(), roof:new Builder(), eaves:new Builder()
     };
@@ -6987,6 +7586,7 @@ var GL3D = (function(){
       var bed = CityView.railBed(map);
       if (bed) P.bed.flat(bed.x0, bed.y0, bed.x1, bed.y1, 0.02, TILE.gravel);
       map.nodes.forEach(function(n){ buildJunction(P, n, S/2 + 2, true); });
+      buildBikePaths(P, map);
       buildHouses(P, view.houses);
       buildTrees(group, view.trees);
       lampPos = buildLamps(group, view.lamps);
@@ -7006,6 +7606,7 @@ var GL3D = (function(){
     var layers = [
       ['ground', M.pavers], ['yard', world.map ? M.grass : M.field], ['bed', M.gravel], ['road', M.asphalt],
       ['kerb', M.kerb], ['paint', M.paint], ['pave', M.pavers], ['island', M.grass],
+      ['bike', M.cycle], ['bikeX', M.cycle],
       ['wallA', M.wallA, true], ['wallB', M.wallB, true], ['shop', M.shop, true], ['home', M.home, true],
       ['gable', M.gable, true], ['roof', M.roof, true], ['eaves', M.kerb, true]
     ];
@@ -7050,6 +7651,35 @@ var GL3D = (function(){
     }
     if (sc.place && sc.rail) stations.push(addStation(group, sc.place, ox + City.RAIL.bed[1] + 22, oy - CFG.BOX - 60));
     void world;
+  }
+
+  /* the red cycle paths along the main roads, and where they cross a side
+     street: red over the asphalt, with the broken white edges of a
+     Radfahrerfurt */
+  function buildBikePaths(P, map){
+    CityView.bikePaths(map).forEach(function(bp){
+      var h = bp.half;
+      P.bike.flat(Math.min(bp.a.x, bp.b.x) - (bp.col ? h : 0), Math.min(bp.a.y, bp.b.y) - (bp.col ? 0 : h),
+                  Math.max(bp.a.x, bp.b.x) + (bp.col ? h : 0), Math.max(bp.a.y, bp.b.y) + (bp.col ? 0 : h),
+                  0.02, TILE.asphalt);
+      var from = bp.lane.from, off = bp.lane.off;
+      var dir = { x:-Geo.ARM_VEC[from].x, y:-Geo.ARM_VEC[from].y }, right = Geo.rot90cw(dir);
+      var side = Geo.ARM_ORDER.filter(function(a){
+        return Geo.ARM_VEC[a].x === right.x && Geo.ARM_VEC[a].y === right.y;
+      })[0];
+      bp.nodes.forEach(function(n){
+        if (n.arms.indexOf(side) < 0) return;
+        function pt(t, lat){ return [n.x + dir.x*t + right.x*lat, n.y + dir.y*t + right.y*lat]; }
+        var e = CFG.BOX + 7, p0 = pt(-e, off - h), p1 = pt(e, off + h);
+        P.bikeX.flat(Math.min(p0[0], p1[0]), Math.min(p0[1], p1[1]), Math.max(p0[0], p1[0]), Math.max(p0[1], p1[1]), 0.036, TILE.asphalt);
+        for (var t = -e; t < e; t += 9){
+          [off - h, off + h - 1.4].forEach(function(lat){
+            var q0 = pt(t, lat), q1 = pt(t + 4.5, lat + 1.4);
+            P.paint.flat(Math.min(q0[0], q1[0]), Math.min(q0[1], q1[1]), Math.max(q0[0], q1[0]), Math.max(q0[1], q1[1]), 0.045);
+          });
+        }
+      });
+    });
   }
 
   function buildRails(group, map, bed, view){
@@ -7385,7 +8015,7 @@ var GL3D = (function(){
     [-1, 1].forEach(function(side){
       var a = new THREE.Vector3(L*0.22, 0.92, side*(W*0.42)), b = new THREE.Vector3(L*0.05, 1.40, side*(W*0.38));
       var len = a.distanceTo(b);
-      var pil = new THREE.Mesh(new THREE.BoxGeometry(0.09, len, 0.13), VMs.dash);
+      var pil = new THREE.Mesh(new THREE.BoxGeometry(0.06, len, 0.09), VMs.dash);
       pil.position.copy(a).add(b).multiplyScalar(0.5);
       pil.lookAt(b); pil.rotateX(Math.PI/2);
       car.add(pil);
@@ -7403,7 +8033,8 @@ var GL3D = (function(){
     var cur = dyn.meshes[v.id];
     if (cur && cur.userData.key === key) return cur;
     if (cur){ scene.remove(cur); }
-    var g = v.kind === 'tram' ? buildTram(v) : v.kind === 'bus' ? buildBus(v) : buildCar(v);
+    var g = v.kind === 'tram' ? buildTram(v) : v.kind === 'bus' ? buildBus(v)
+          : v.kind === 'bike' ? buildBike(v) : buildCar(v);
     if (v.isPlayer) buildCockpit(v, g);
     g.userData.key = key;
     scene.add(g);
@@ -7419,6 +8050,11 @@ var GL3D = (function(){
       g.position.set(v.pos.x*U, 0, v.pos.y*U);
       g.rotation.y = -v.pos.h;
       (g.userData.wheels || []).forEach(function(w){ w.children[0] && (w.rotation.z = -(v.s*U)/0.33); });
+      /* a cyclist pedals while moving */
+      if (g.userData.rider){
+        var ph = v.s*U*1.6;
+        g.userData.rider.userData.limbs.forEach(function(l){ l.hip.rotation.z = 0.9 + Math.sin(ph + (l.side > 0 ? Math.PI : 0))*0.45; });
+      }
       var blink = (t*2.2) % 1 < 0.55;
       (g.userData.brake || []).forEach(function(m){ m.visible = !!v.brakeLight; });
       var bl = g.userData.blink;
@@ -7436,27 +8072,129 @@ var GL3D = (function(){
       if (!seen[id]){ scene.remove(dyn.meshes[id]); delete dyn.meshes[id]; }
     });
   }
+  /* ---------------- people ---------------- */
+  var COATS  = ['#2f3b52','#5b3a2e','#3d4a3a','#7a1f2b','#1f1f24','#8b7355','#2c5a7a','#b9b2a6','#6b2f5b','#c4572e'];
+  var TROUSERS = ['#1d2330','#26282c','#3b3a36','#2a3b5c','#4a4038'];
+  var SKINS  = ['#f0d0b4','#e2bf9d','#c89a74','#8d5f3e','#5e3d28'];
+  var HAIR   = ['#2b2620','#4a3322','#8a6a45','#1a1a1a','#b8b0a2'];
+  var pmat = {};
+  function colorMat(c, rough){
+    var k = c + (rough || '');
+    return pmat[k] || (pmat[k] = new THREE.MeshStandardMaterial({ color:c, roughness:rough || 0.85 }));
+  }
+  function pick(list, x){ return list[Math.floor(x*list.length) % list.length]; }
+  var PG = null;
+  function personGeo(){
+    if (PG) return PG;
+    PG = {
+      torso: new THREE.CylinderGeometry(0.19, 0.16, 0.62, 12),
+      hips:  new THREE.CylinderGeometry(0.16, 0.15, 0.16, 12),
+      leg:   new THREE.CylinderGeometry(0.075, 0.06, 0.84, 8).translate(0, -0.42, 0),
+      arm:   new THREE.CylinderGeometry(0.05, 0.045, 0.62, 8).translate(0, -0.31, 0),
+      head:  new THREE.SphereGeometry(0.115, 14, 12),
+      hair:  new THREE.SphereGeometry(0.12, 14, 8, 0, Math.PI*2, 0, Math.PI*0.55),
+      shoe:  new THREE.BoxGeometry(0.24, 0.07, 0.1),
+      bag:   new THREE.BoxGeometry(0.1, 0.32, 0.26)
+    };
+    return PG;
+  }
+  /* a person facing +x, feet on y = 0; limbs hang from hip and shoulder
+     pivots so they can swing */
+  function buildPerson(look, kid){
+    var G = personGeo(), g = new THREE.Group(), body = new THREE.Group();
+    var s = kid ? 0.68 : (0.94 + 0.12*((look*7) % 1));
+    body.scale.setScalar(s);
+    g.add(body);
+    var coat = colorMat(pick(COATS, look)), legs = colorMat(pick(TROUSERS, (look*3.7) % 1));
+    var skin = colorMat(pick(SKINS, (look*5.3) % 1), 0.6), hair = colorMat(pick(HAIR, (look*9.1) % 1));
+    var t = part(G.torso, coat, 0, 1.22, 0, body, true);
+    part(G.hips, legs, 0, 0.88, 0, body, true);
+    var head = part(G.head, skin, 0, 1.68, 0, body, true);
+    part(G.hair, hair, -0.01, 1.70, 0, body);
+    var limbs = [];
+    [-1, 1].forEach(function(side){
+      var hip = new THREE.Group(); hip.position.set(0, 0.88, side*0.085); body.add(hip);
+      var l = new THREE.Mesh(G.leg, legs); l.castShadow = true; hip.add(l);
+      var shoe = new THREE.Mesh(G.shoe, colorMat('#1b1b1b')); shoe.position.set(0.05, -0.84, 0); hip.add(shoe);
+      var sh = new THREE.Group(); sh.position.set(0, 1.49, side*0.215); body.add(sh);
+      var a = new THREE.Mesh(G.arm, coat); a.castShadow = true; sh.add(a);
+      limbs.push({ hip:hip, shoulder:sh, side:side });
+    });
+    if (!kid && look > 0.6) part(G.bag, colorMat('#3a2c22'), -0.02, 1.05, 0.26, body);
+    g.userData.limbs = limbs; g.userData.phase = look*6.28;
+    void t; void head;
+    return g;
+  }
+  function swing(g, amount, t){
+    var ph = t*7.5 + g.userData.phase;
+    g.userData.limbs.forEach(function(l){
+      var a = Math.sin(ph) * amount * l.side;
+      l.hip.rotation.z = a;
+      l.shoulder.rotation.z = -a*0.8;
+    });
+  }
   function syncPeds(world){
     var seen = {};
     world.peds.forEach(function(ped, i){
-      var k = 'p' + i;
       if (ped.state === 'done') return;
+      if (ped.look === undefined) ped.look = (i*0.37 + 0.11) % 1;
+      var k = ped.gid || (ped.gid = 'p' + (++pedIds));
       seen[k] = true;
       var g = dyn.peds[k];
-      if (!g){
-        g = new THREE.Group();
-        var coat = new THREE.MeshStandardMaterial({ color: ped.kid ? 0xe0863a : 0x3f5373, roughness:0.8 });
-        var s = ped.kid ? 0.72 : 1;
-        part(new THREE.CylinderGeometry(0.2*s, 0.17*s, 0.7*s, 10), coat, 0, 1.1*s, 0, g, true);
-        part(new THREE.CylinderGeometry(0.08*s, 0.08*s, 0.8*s, 8), mats().trunk, -0.08*s, 0.4*s, 0, g, true);
-        part(new THREE.CylinderGeometry(0.08*s, 0.08*s, 0.8*s, 8), mats().trunk, 0.08*s, 0.4*s, 0, g, true);
-        part(new THREE.SphereGeometry(0.12*s, 12, 10), new THREE.MeshStandardMaterial({ color:0xe2bf9d }), 0, 1.6*s, 0, g, true);
-        scene.add(g); dyn.peds[k] = g;
-      }
+      if (!g){ g = buildPerson(ped.look, ped.kid); scene.add(g); dyn.peds[k] = g; }
       var pt = ped.point();
       g.position.set(pt.x*U, 0, pt.y*U);
+      /* facing the way they walk across; waiting, they face the road */
+      var q = Geo.rot90cw(Geo.ARM_VEC[ped.arm]);
+      g.rotation.y = -Math.atan2(q.y*ped.dir, q.x*ped.dir);
+      swing(g, ped.state === 'walking' ? 0.45 : 0, world.t);
     });
     Object.keys(dyn.peds).forEach(function(k){ if (!seen[k]){ scene.remove(dyn.peds[k]); delete dyn.peds[k]; } });
+  }
+  var pedIds = 0;
+
+  /* a cyclist on a city bike, facing +x */
+  function buildBike(v){
+    var VMs = vehicleMats(), g = new THREE.Group();
+    var frame = colorMat(v.color || '#2b5d8a', 0.4);
+    var tyre = new THREE.TorusGeometry(0.33, 0.03, 8, 28);
+    g.userData.wheels = [];
+    [-0.52, 0.52].forEach(function(x){
+      var wg = new THREE.Group(); wg.position.set(x, 0.34, 0);
+      var t = new THREE.Mesh(tyre, VMs.tyre); t.castShadow = true; wg.add(t);
+      var hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.01, 12).rotateX(Math.PI/2), colorMat('#9aa0a6', 0.3));
+      hub.material = new THREE.MeshStandardMaterial({ color:0x9aa0a6, transparent:true, opacity:0.25, metalness:0.8 });
+      wg.add(hub);
+      g.add(wg); g.userData.wheels.push(wg);
+    });
+    function bar(a, b, r, m){
+      var va = new THREE.Vector3(a[0], a[1], 0), vb = new THREE.Vector3(b[0], b[1], 0);
+      var mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, va.distanceTo(vb), 6), m);
+      mesh.position.copy(va).add(vb).multiplyScalar(0.5);
+      mesh.lookAt(vb); mesh.rotateX(Math.PI/2);
+      g.add(mesh); return mesh;
+    }
+    bar([-0.52, 0.34], [-0.05, 0.36], 0.025, frame);
+    bar([-0.05, 0.36], [0.40, 0.80], 0.025, frame);
+    bar([-0.52, 0.34], [-0.18, 0.86], 0.022, frame);
+    bar([-0.05, 0.36], [-0.20, 0.90], 0.025, frame);
+    bar([0.52, 0.34], [0.40, 0.95], 0.022, frame);
+    bar([-0.18, 0.86], [0.40, 0.80], 0.025, frame);
+    part(new THREE.BoxGeometry(0.1, 0.02, 0.56), colorMat('#1a1a1a'), 0.38, 1.0, 0, g);          // handlebar
+    part(new THREE.BoxGeometry(0.24, 0.05, 0.14), colorMat('#1a1a1a'), -0.22, 0.93, 0, g);        // saddle
+    /* the rider: leaning a little forward, hands on the bar */
+    var rider = buildPerson(v.look || 0.3, false);
+    rider.position.set(-0.24, -0.02, 0);
+    var body = rider.children[0];
+    body.rotation.z = -0.22;
+    rider.userData.limbs.forEach(function(l){ l.shoulder.rotation.z = -1.0; });
+    g.add(rider);
+    g.userData.rider = rider;
+    var helmet = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8, 0, Math.PI*2, 0, Math.PI*0.5), colorMat('#e8e8e2', 0.4));
+    helmet.position.set(0.18, 1.72, 0); body.add(helmet);
+    part(new THREE.BoxGeometry(0.04, 0.04, 0.06), VMs.tail, -0.6, 0.62, 0, g);                    // rear light
+    g.userData.brake = []; g.userData.blink = { left:[], right:[] };
+    return g;
   }
 
   /* ---------------- per frame: lights, route, sky ---------------- */
@@ -7558,8 +8296,53 @@ var GL3D = (function(){
   var sunDir = new (typeof THREE !== 'undefined' ? THREE.Vector3 : Object)();
   var envLevel = null;
 
+  /* ---------------- the rear-view mirror ---------------- */
+  /* A second camera at the mirror, looking back along the car, drawn into
+     a small picture at the top of the windscreen - flipped left to right,
+     as a mirror is, so a cyclist behind you on the right shows on the right. */
+  var mirror = null;
+  function mirrorSetup(){
+    if (mirror) return mirror;
+    var rt = new THREE.WebGLRenderTarget(640, 200);
+    rt.texture.encoding = THREE.sRGBEncoding;
+    var cam = new THREE.PerspectiveCamera(24, 3.2, 0.3, 900);
+    cam.rotation.order = 'YXZ';
+    var ov = new THREE.Scene(), ocam = new THREE.OrthographicCamera(0, 1, 1, 0, -10, 10);
+    var frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color:0x0c0d0e }));
+    var glass = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+                  new THREE.MeshBasicMaterial({ map:rt.texture, side:THREE.DoubleSide }));
+    glass.position.z = 1;
+    ov.add(frameMesh); ov.add(glass);
+    return (mirror = { rt:rt, cam:cam, ov:ov, ocam:ocam, frame:frameMesh, glass:glass });
+  }
+  function drawMirror(world, yaw, w, h, big){
+    if (Math.abs(yaw || 0) > 0.35) return;           // looking out of a side window
+    var m = mirrorSetup(), p = world.player;
+    var c = Math.cos(p.pos.h), s = Math.sin(p.pos.h);
+    m.cam.position.set((p.pos.x + c*0.2*CFG.PPM)*U, 1.32, (p.pos.y + s*0.2*CFG.PPM)*U);
+    m.cam.rotation.set(-0.03, -(p.pos.h + Math.PI) - Math.PI/2, 0);
+    var own = dyn.meshes[p.id];
+    if (own) own.visible = false;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.setRenderTarget(m.rt);
+    renderer.render(scene, m.cam);
+    renderer.setRenderTarget(null);
+    renderer.shadowMap.autoUpdate = true;
+    if (own) own.visible = true;
+
+    var mw = Math.min(w*0.36, 320) * (big ? 1.45 : 1), mh = mw/3.2;
+    var cx = w/2, cy = h - 10 - mh/2 - (big ? 0 : 4);
+    m.ocam.left = 0; m.ocam.right = w; m.ocam.top = h; m.ocam.bottom = 0; m.ocam.updateProjectionMatrix();
+    m.frame.position.set(cx, cy, 0); m.frame.scale.set(mw + 10, mh + 10, 1);
+    m.glass.position.set(cx, cy, 1); m.glass.scale.set(-mw, mh, 1);     // negative: mirrored
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(m.ov, m.ocam);
+    renderer.autoClear = true;
+  }
+
   /* ---------------- main entry ---------------- */
-  function frame(world, yaw, w, h){
+  function frame(world, yaw, w, h, opts){
     if (!available()) return false;
     if (!built || built.world !== world) buildWorld(world);
     if (w !== lastW || h !== lastH){
@@ -7598,6 +8381,7 @@ var GL3D = (function(){
     headlamp.target.position.set(cx + c*30, 0, cz + s*30);
 
     renderer.render(scene, camera);
+    if (world.map) drawMirror(world, yaw, w, h, opts && opts.mirror);
     return true;
   }
 
@@ -7652,8 +8436,20 @@ var GL3D = (function(){
     merk: { de:'Wer über die Gleise abbiegt, lässt die Bahn durch – auch bei Grün, auch von hinten.',
             en:'Turning across the tracks, let the train through – even on green, even from behind.' }
   };
+  /* the driving test: what the examiner expects */
+  var EXAM_MINUTES = 15;
+  var EXAM_BRIEF = {
+    task: { de:'Die Prüfungsfahrt dauert ' + EXAM_MINUTES + ' Minuten. Der Prüfer sagt dir, wo es langgeht. ' +
+                'Es gibt keine Hinweise und kein Zurückspulen. Kleine Fehler werden notiert; ein schwerer ' +
+                'Fehler beendet die Prüfung sofort. Vor jedem Abbiegen: Spiegel (M), Blinker, Schulterblick (Q/E).',
+            en:'The test drive lasts ' + EXAM_MINUTES + ' minutes. The examiner tells you where to go. ' +
+               'No hints, no rewinding. Small faults are noted; one serious fault ends the test at once. ' +
+               'Before every turn: mirror (M), indicator, shoulder check (Q/E).' },
+    merk: { de:'Nicht bestanden bei einem schweren Fehler, bei fünf kleinen, oder wenn derselbe kleine dreimal passiert.',
+            en:'You fail on one serious fault, on five small ones, or on the same small one three times.' }
+  };
   var input = { throttle:false, brake:false, indicator:'off' };
-  var look  = { left:false, right:false };
+  var look  = { left:false, right:false, mirror:false };
 
   function el(id){ return document.getElementById(id); }
   function show(id, on){ el(id).classList.toggle('hidden', !on); }
@@ -7867,8 +8663,8 @@ var GL3D = (function(){
   /* ---------------- free drive ---------------- */
   function fillDriveBrief(){
     var w = state.world, titlePair = { de:w.sc.title, en:w.sc.en };
-    var B = w.map.preset ? FRANKFURT_BRIEF : DRIVE_BRIEF;
-    el('brief-group').textContent   = I18N.t('drive.cta.button');
+    var B = w.exam ? EXAM_BRIEF : w.map.preset ? FRANKFURT_BRIEF : DRIVE_BRIEF;
+    el('brief-group').textContent   = I18N.t(w.exam ? 'exam.button' : 'drive.cta.button');
     el('brief-title').textContent   = I18N.pick(titlePair);
     el('brief-en').textContent      = I18N.other(titlePair);
     el('brief-task').textContent    = I18N.pick(B.task);
@@ -7884,12 +8680,15 @@ var GL3D = (function(){
 
   function startDrive(which){
     state.mode = 'drive';
-    if (which === 'frankfurt' || which === 'random') state.driveMap = which;
+    if (which === 'frankfurt' || which === 'random' || which === 'exam') state.driveMap = which;
+    var exam = state.driveMap === 'exam';
     var seed = Math.floor(Math.random()*100000);
     state.world = new Drive.DriveWorld({ seed:seed, cols:6, rows:5, target:1e9,
-      preset: state.driveMap === 'random' ? null : 'eschersheim' });
+      preset: state.driveMap === 'random' ? null : 'eschersheim',
+      exam: exam ? { minutes:EXAM_MINUTES } : null });
+    state.spoken = null;
     input.throttle = false; input.brake = false; input.indicator = 'off';
-    look.left = false; look.right = false;
+    look.left = false; look.right = false; look.mirror = false;
     state.yaw = 0; state.yawTarget = 0; state.drag = null;
     el('pedal-gas').classList.remove('down');
     el('pedal-brake').classList.remove('down');
@@ -7973,6 +8772,13 @@ var GL3D = (function(){
     verdict.textContent = I18N.t('drive.result.title');
     verdict.className = 'verdict ' + (majors ? 'bad' : 'ok');
     el('res-sub').textContent = I18N.t('drive.result.sub', { a:rep.cleared });
+    if (rep.exam){
+      var ex = rep.exam;
+      verdict.textContent = I18N.t(ex.passed ? 'exam.passed' : 'exam.failed');
+      verdict.className = 'verdict ' + (ex.passed ? 'ok' : 'bad');
+      el('res-sub').textContent = ex.passed ? I18N.t('exam.sub.pass', { n:ex.minors })
+        : I18N.t('exam.sub.' + ex.why, { n:ex.minors });
+    }
 
     var list = el('res-faults');
     clear(list);
@@ -7998,13 +8804,33 @@ var GL3D = (function(){
       });
     }
     clear(el('res-points'));
+    el('res-points').appendChild(checklist(rep));
 
     refreshResultLabels();
     show('overlay-result', true);
     draw();
   }
+  /* the examiner's scoring sheet: five areas, each clean or not */
+  function checklist(rep){
+    var box = make('div', 'checklist');
+    box.appendChild(make('h4', 'eyebrow', I18N.t('exam.checklist')));
+    (rep.categories || []).forEach(function(c){
+      var row = make('div', 'check-row ' + (c.faults.length ? 'bad' : 'ok'));
+      row.appendChild(make('span', 'check-mark', c.faults.length ? '✗' : '✓'));
+      var t = make('span', 'check-name', I18N.pick(c.cat));
+      row.appendChild(t);
+      var counts = {};
+      c.faults.forEach(function(f){ var k = I18N.pick(f.def.title); counts[k] = (counts[k] || 0) + 1; });
+      var what = Object.keys(counts).map(function(k){ return k + (counts[k] > 1 ? ' ×' + counts[k] : ''); }).join(', ');
+      row.appendChild(make('span', 'check-what', what || I18N.t('exam.ok')));
+      box.appendChild(row);
+    });
+    return box;
+  }
   function endDrive(){
-    if (state.mode === 'drive' && state.world) driveResult();
+    if (state.mode !== 'drive' || !state.world) return;
+    if (state.world.exam && state.world.state === 'run') state.world.finish('exam_end');
+    driveResult();
   }
 
   /* ---------------- view ---------------- */
@@ -8039,7 +8865,11 @@ var GL3D = (function(){
     state.yaw += (state.yawTarget - state.yaw) * Math.min(1, dt*8);
     if (Math.abs(state.yaw - state.yawTarget) < 0.002) state.yaw = state.yawTarget;
 
+    /* the examiner sees where you look: head turned, mirror checked */
+    input.yaw = state.yaw;
+    input.mirror = look.mirror;
     state.world.update(dt, input);
+    if (state.world.exam) examiner(state.world);
     updateHud();
     draw();
 
@@ -8051,6 +8881,45 @@ var GL3D = (function(){
     } else if (state.world.state !== 'run' && state.world.endTimer > 0.9){
       finishRun();
     }
+  }
+
+  /* ---------------- the examiner's voice ---------------- */
+  /* Directions as a German examiner gives them, once per junction, a
+     little before you reach it - and the words nobody wants to hear. */
+  var ORD = { right:'erste', straight:'zweite', left:'dritte' };
+  function examiner(w){
+    var p = w.player, st = p.steps && p.steps[p.stepIdx];
+    if (w.state !== 'run'){
+      if (w.endReason === 'exam_fail' && state.spoken !== 'end'){
+        state.spoken = 'end';
+        say('Bitte fahren Sie rechts ran. Die Prüfung ist leider beendet.');
+      }
+      return;
+    }
+    if (!st) return;
+    var key = p.stepIdx + '@' + st.node.id;
+    var dist = (st.junctionS - p.s) / CFG.PPM;
+    if (state.spoken === key || dist > 75 || dist < 5) return;
+    state.spoken = key;
+    var turn = Geo.turnOf(st.from, st.to), street = w.map.streetName(st.node, st.to);
+    var text;
+    if (st.node.layout.type === 'roundabout')
+      text = 'Im Kreisverkehr bitte die ' + ORD[turn] + ' Ausfahrt nehmen.';
+    else if (turn === 'straight')
+      text = p.stepIdx % 3 === 0 ? 'Bitte weiter geradeaus.' : '';
+    else
+      text = 'An der nächsten Kreuzung bitte ' + (turn === 'right' ? 'rechts' : 'links') +
+             ' abbiegen, in die ' + street + '.';
+    if (text) say(text);
+  }
+  function say(text){
+    try {
+      if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return;
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = 'de-DE'; u.rate = 0.95;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    } catch (e){}
   }
 
   function draw(){
@@ -8065,7 +8934,7 @@ var GL3D = (function(){
         ctx.setTransform(1,0,0,1,0,0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
-        GL3D.frame(state.world, state.yaw, W, H);
+        GL3D.frame(state.world, state.yaw, W, H, { mirror:look.mirror });
       } else POV.frame(ctx, W, H, state.world, state.yaw);
       drawMinimap();
     } else {
@@ -8088,7 +8957,13 @@ var GL3D = (function(){
     sp.textContent = v;
     sp.className = v > w.sc.limit + 4 ? 'over' : '';
     el('hud-limit').textContent  = w.sc.limit;
-    if (state.mode === 'drive'){
+    if (state.mode === 'drive' && w.exam){
+      var left = Math.max(0, Math.ceil(w.exam.seconds - w.t));
+      el('hud-time-label').textContent = I18N.t('exam.timeLeft');
+      el('hud-time').textContent = Math.floor(left/60) + ':' + ('0' + left % 60).slice(-2);
+      var ins = w.instruction();
+      el('hud-task').textContent = ins ? I18N.pick(ins) : '';
+    } else if (state.mode === 'drive'){
       el('hud-time-label').textContent = I18N.t('hud.cleared');
       el('hud-time').textContent = w.cleared;
       var instr = w.instruction();
@@ -8105,7 +8980,8 @@ var GL3D = (function(){
     el('look-l').classList.toggle('on', state.yaw < -0.05);
     el('look-r').classList.toggle('on', state.yaw >  0.05);
 
-    var h = state.hints ? I18N.pick(w.hint()) : '';
+    /* nobody whispers the answers in an exam */
+    var h = state.hints && !w.exam ? I18N.pick(w.hint()) : '';
     /* after a rewind, always say what you are retrying and how to get it right */
     if (w.hold){
       var fd = Rules.FAULTS[w.hold.fault.id];
@@ -8321,6 +9197,7 @@ var GL3D = (function(){
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = true; el('pedal-brake').classList.add('down'); }
     if (k === 'q' || k === 'arrowleft')  look.left = true;
     if (k === 'e' || k === 'arrowright') look.right = true;
+    if (k === 'm') look.mirror = true;
     if (k === 'a') setIndicator('left');
     if (k === 'd') setIndicator('right');
     if (k === 'x') input.indicator = 'off';
@@ -8332,6 +9209,7 @@ var GL3D = (function(){
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = false; el('pedal-brake').classList.remove('down'); }
     if (k === 'q' || k === 'arrowleft')  look.left = false;
     if (k === 'e' || k === 'arrowright') look.right = false;
+    if (k === 'm') look.mirror = false;
   });
   window.addEventListener('blur', function(){
     input.throttle = false; input.brake = false;
@@ -8401,6 +9279,7 @@ var GL3D = (function(){
     hold('pedal-brake', function(){ input.brake = true; },     function(){ input.brake = false; });
     hold('look-l',      function(){ look.left = true; },       function(){ look.left = false; });
     hold('look-r',      function(){ look.right = true; },      function(){ look.right = false; });
+    hold('look-m',      function(){ look.mirror = true; },     function(){ look.mirror = false; });
     initDragLook();
 
     el('btn-start').onclick = beginDriving;
@@ -8411,6 +9290,7 @@ var GL3D = (function(){
     el('btn-quit').onclick  = toMenu;
     el('btn-drive').onclick = function(){ startDrive('frankfurt'); };
     el('btn-drive-random').onclick = function(){ startDrive('random'); };
+    el('btn-exam').onclick = function(){ startDrive('exam'); };
     el('btn-fault-continue').onclick = resumeDrive;
     el('btn-fault-rewind').onclick = rewindDrive;
     el('btn-end-drive').onclick = endDrive;

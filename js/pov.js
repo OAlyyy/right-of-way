@@ -326,7 +326,7 @@ var POV = (function(){
   function stopLineX(sc, arm, ring){
     if (ring) return CFG.RING + CFG.BOX + 8;
     if (sc.rail && arm === sc.rail.side) return sc.rail.carHold - 2;
-    if (sc.x !== undefined) return CFG.BOX + 30;
+    if (sc.x !== undefined) return City.HOLD - 3;
     return CFG.BOX + 8;
   }
 
@@ -389,7 +389,14 @@ var POV = (function(){
       var lit  = sc.lights && sc.lights.groups[arm];
       var lineX = stopLineX(sc, arm, ring);
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      var town = sc.x !== undefined;
+      if (hasCross && !town) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      /* in town the crossing sits just outside the box, inside the line */
+      if (hasCross && town){
+        for (var zy = -CFG.BOX + 4; zy < CFG.BOX - 3; zy += 14)
+          armQuad(ctx, cam, arm, City.CW.in, zy, City.CW.out, zy + 7, COL.paint, ox, oy);
+        hasCross = false;
+      }
 
       if (lit || sign === 'stop'){
         armQuad(ctx, cam, arm, lineX, -CFG.BOX, lineX + 7, 0, COL.paint, ox, oy);
@@ -449,6 +456,14 @@ var POV = (function(){
 
     var nodes = nearNodes(world, cam, FAR_CUT + City.SPACING);
     nodes.forEach(function(n){ drawJunctionGround(ctx, cam, n, reach, true); });
+
+    /* the red cycle paths, over pavement and side streets alike */
+    CityView.bikePaths(map).forEach(function(bp){
+      var h = bp.half;
+      fillPoly(ctx, cam, rect(Math.min(bp.a.x, bp.b.x) - (bp.col ? h : 0), Math.min(bp.a.y, bp.b.y) - (bp.col ? 0 : h),
+                              Math.max(bp.a.x, bp.b.x) + (bp.col ? h : 0), Math.max(bp.a.y, bp.b.y) + (bp.col ? 0 : h), 0.2),
+               night ? '#4a2a22' : '#b86a58');
+    });
 
     /* rails: over the bed and across the roads, sleepers only up close */
     if (bed){
@@ -575,7 +590,28 @@ var POV = (function(){
     if (v.kind === 'bus')  return 2.85*M;
     return 0.98*M;
   }
+  /* a cyclist, seen side-on or from behind: close enough as a sprite */
+  function bikeSprite(color){
+    return sprite('bike' + color + (night ? 'n' : 'd'), 64, 96, function(g, w, h){
+      g.strokeStyle = night ? '#222' : '#1b1b1b'; g.lineWidth = 4;
+      g.beginPath(); g.arc(w*0.5, h*0.82, w*0.14, 0, Math.PI*2); g.stroke();
+      g.strokeStyle = color; g.lineWidth = 4;
+      g.beginPath(); g.moveTo(w*0.5, h*0.82); g.lineTo(w*0.5, h*0.52); g.stroke();
+      g.fillStyle = shade(color, night ? 0.5 : 1);
+      g.fillRect(w*0.32, h*0.22, w*0.36, h*0.32);          // jacket
+      g.fillStyle = '#e2bf9d';
+      g.beginPath(); g.arc(w*0.5, h*0.14, w*0.11, 0, Math.PI*2); g.fill();
+      g.fillStyle = '#e8e8e2';
+      g.beginPath(); g.arc(w*0.5, h*0.11, w*0.12, Math.PI, Math.PI*2); g.fill();
+      g.fillStyle = '#c0281c'; g.fillRect(w*0.44, h*0.60, w*0.12, h*0.04);
+    });
+  }
   function drawVehicle(ctx, cam, v, t){
+    if (v.kind === 'bike'){
+      var bb = billboard(cam, v.pos.x, v.pos.y, 0, 1.85*M);
+      drawBillboard(ctx, bb, bikeSprite(v.color || '#2b5d8a'), 0.9, 1.85);
+      return;
+    }
     drawShadow(ctx, cam, v);
     if (v.kind === 'tram') drawTram(ctx, cam, v);
     else if (v.kind === 'bus') drawBus(ctx, cam, v);

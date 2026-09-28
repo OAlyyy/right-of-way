@@ -107,6 +107,12 @@ var Render = (function(){
       drawJunctionGround(ctx, n, reach);
       ctx.restore();
     });
+    ctx.fillStyle = night ? '#4a2a22' : '#b86a58';
+    CityView.bikePaths(map).forEach(function(bp){
+      var h = bp.half;
+      ctx.fillRect(Math.min(bp.a.x, bp.b.x) - (bp.col ? h : 0), Math.min(bp.a.y, bp.b.y) - (bp.col ? 0 : h),
+                   Math.abs(bp.b.x - bp.a.x) + (bp.col ? 2*h : 0), Math.abs(bp.b.y - bp.a.y) + (bp.col ? 0 : 2*h));
+    });
     if (bed){
       ctx.strokeStyle = COL.rail; ctx.lineWidth = 2.5;
       bed.tracks.forEach(function(tx){
@@ -267,9 +273,16 @@ var Render = (function(){
       var lit   = sc.lights && sc.lights.groups[arm];
       var lineX = ring ? CFG.RING + CFG.BOX + 8
                 : (sc.rail && arm === sc.rail.side) ? sc.rail.carHold - 2
-                : sc.x !== undefined ? CFG.BOX + 30 : CFG.BOX + 8;
+                : sc.x !== undefined ? City.HOLD - 3 : CFG.BOX + 8;
       var hasCross = L.crossings && L.crossings.indexOf(arm) >= 0;
-      if (hasCross) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      var town = sc.x !== undefined;
+      if (hasCross && !town) lineX = Math.max(lineX, Sim.CROSS_MID + Sim.CROSS_HALF + 12);
+      /* in town the zebra sits just outside the box, inside the line */
+      if (hasCross && town){
+        ctx.fillStyle = COL.paint;
+        for (var zy = -CFG.BOX + 4; zy < CFG.BOX - 3; zy += 14) ctx.fillRect(City.CW.in, zy, City.CW.out - City.CW.in, 7);
+        hasCross = false;
+      }
 
       if (lit || sign === 'stop'){
         ctx.fillStyle = COL.paint;
@@ -476,6 +489,15 @@ var Render = (function(){
     ctx.fillStyle = COL.shadow;
     roundRect(ctx, -L/2+3, -W/2+4, L, W, 7); ctx.fill();
 
+    if (v.kind === 'bike'){
+      ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-L/2, -1.5, L, 3);
+      ctx.fillStyle = v.color || '#2b5d8a';
+      ctx.beginPath(); ctx.ellipse(-2, 0, 5, 4.5, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#e8e8e2';
+      ctx.beginPath(); ctx.arc(1, 0, 2.6, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+      return;
+    }
     if (v.kind === 'tram'){
       ctx.fillStyle = v.color || '#d8dde3';
       roundRect(ctx, -L/2, -W/2, L, W, 8); ctx.fill();
@@ -543,8 +565,8 @@ var Render = (function(){
     drawRoute(ctx, world);
     ctx.save(); ctx.translate(j.x || 0, j.y || 0);
     drawSigns(ctx, world, scale);
-    drawPeds(ctx, world);
     ctx.restore();
+    drawPeds(ctx, world);             // a pedestrian knows where it stands
     world.vehicles.forEach(function(v){ if (!v.done) drawVehicle(ctx, v, world.t); });
     ctx.save(); ctx.translate(j.x || 0, j.y || 0);
     drawLights(ctx, world);

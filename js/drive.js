@@ -29,6 +29,9 @@ var Drive = (function(){
       this.sc.title = 'Frankfurt-Eschersheim · Weißer Stein';
       this.sc.en    = 'Frankfurt-Eschersheim · Weißer Stein';
     }
+    /* an exam: a set time, no help, no stopping to explain */
+    this.exam = opts.exam ? { seconds:(opts.exam.minutes || 15)*60 } : null;
+    if (this.exam){ this.sc.title = 'Prüfungsfahrt'; this.sc.en = 'Driving test'; }
     this.t = 0;
     this.vehicles = [];
     this.peds = [];
@@ -71,6 +74,8 @@ var Drive = (function(){
       this.spawnTram('S', 900 + this.rand()*2500);
       this.spawnTram('N', 900 + this.rand()*2500);
     }
+    this.manageBikes(true);
+    this.managePeds();
   };
 
   /* ---------------- the U-Bahn ---------------- */
@@ -157,9 +162,170 @@ var Drive = (function(){
       veh.enterS    = st.enterS;
       veh.exitS     = st.exitS;
       veh.crossS = undefined; veh.exitCrossS = undefined;
-      var cr = st.node.layout.crossings;
-      if (cr && cr.indexOf(st.from) >= 0) veh.crossS = veh.lineS - 26;
+      /* Every arm has a pedestrians' crossing across its mouth. Note where
+         this car passes the one on the arm it comes in on and the one on
+         the arm it leaves by - the points the examiner and the town's
+         drivers check pedestrians against. Trains and bikes cross none. */
+      /* Both are where the car's centre is when its bumper reaches the
+         line people walk along: stopping a little short of either keeps
+         the whole car off the crossing. */
+      if (veh.kind !== 'tram' && veh.kind !== 'bike' && st.node.layout.type !== 'roundabout'){
+        var reach = City.CW.mid + 4 + veh.len*0.5;
+        veh.crossS = st.enterS + (City.ENTRY - reach);
+        var n = st.node, o = Geo.ARM_VEC[st.to];
+        for (var s = st.junctionS; s <= st.exitS; s += 2){
+          var q = veh.path.at(s);
+          if ((q.x - n.x)*o.x + (q.y - n.y)*o.y >= City.CW.mid - veh.len*0.5){ veh.exitCrossS = s; break; }
+        }
+      }
     }
+  };
+
+  /* ---------------- cyclists ---------------- */
+  var BIKE_COLORS = ['#2b5d8a','#3d3f44','#8b2e2e','#2f6b4f','#c9a227','#6a4a8c','#d8d8d4'];
+  DriveWorld.prototype.spawnBike = function(lane, s){
+    var r = this.map.bikeRoute(lane);
+    var v = new Sim.Vehicle({
+      path:r.path, fromArm:lane.from, toArm:Geo.opposite(lane.from),
+      kind:'bike', len:21, wid:8,
+      color:BIKE_COLORS[Math.floor(this.rand()*BIKE_COLORS.length)],
+      cruise:kmh(15 + this.rand()*7), v:kmh(16), s:s || 0, lane:lane,
+      id:'b' + (this.nextId = (this.nextId || 0) + 1)
+    });
+    v.look = this.rand();
+    v.steps = r.steps; v.stepIdx = 0;
+    this.syncStep(v, true);
+    v.pos = v.path.at(v.s);
+    for (var i = 0; i < this.vehicles.length; i++)
+      if (this.vehicles[i].kind === 'bike' && Geo.dist(this.vehicles[i].pos, v.pos) < 90) return null;
+    this.vehicles.push(v);
+    return v;
+  };
+  DriveWorld.prototype.manageBikes = function(initial){
+    var self = this, lanes = this.map.bikeLanes || [];
+    lanes.forEach(function(lane){
+      var on = self.vehicles.filter(function(v){ return v.kind === 'bike' && v.lane === lane && !v.done; });
+      if (initial){
+        self.spawnBike(lane, 300 + self.rand()*1800);
+        self.spawnBike(lane, 2500 + self.rand()*1800);
+      } else if (on.length < 2 && self.rand() < 0.25) self.spawnBike(lane, 0);
+    });
+  };
+
+  /* ---------------- pedestrians ---------------- */
+  /* People waiting at the corners of the junctions around you, crossing
+     the side of a junction they are standing at. They go when it is safe
+     for them: on their own green at lights, in front of traffic turning
+     in (which must let them), never into traffic coming along the road
+     they cross - except on a zebra, where everyone must stop for them. */
+  var PED_TARGET = 12;
+  DriveWorld.prototype.managePeds = function(){
+    var p = this.player, self = this;
+    this.peds = this.peds.filter(function(ped){
+      if (ped.state === 'done') return false;
+      var pt = ped.point();
+      if (Geo.dist(pt, p.pos) > 900) return false;
+      return !(ped.state === 'waiting' && ped.wait > 45);
+    });
+    var tries = 0;
+    while (this.peds.length < PED_TARGET && tries++ < 12){
+      var n = this.map.nodes[Math.floor(this.rand()*this.map.nodes.length)];
+      var d = Math.hypot(n.x - p.pos.x, n.y - p.pos.y);
+      if (d > 700 || n.layout.type === 'roundabout') continue;
+      var arms = n.arms.filter(function(a){ return !(n.rail && a === n.rail.side); });
+      if (!arms.length) continue;
+      var arm = arms[Math.floor(this.rand()*arms.length)];
+      var right = this.rand() < 0.5;
+      var clash = this.peds.some(function(q){ return q.node === n && q.arm === arm; });
+      if (clash) continue;
+      var zebra = !!(n.layout.crossings && n.layout.crossings.indexOf(arm) >= 0);
+      var ped = new Sim.Ped({
+        arm:arm, d:City.CW.mid, node:n, zebra:zebra,
+        u0: right ? (CFG.BOX + 22) : -(CFG.BOX + 22), dir: right ? -1 : 1,
+        start:'waiting', kid: this.rand() < 0.1, intent:true
+      });
+      ped.look = this.rand();
+      ped.wait = -this.rand()*4;                   // not everyone sets off at once
+      this.peds.push(ped);
+    }
+    void self;
+  };
+  /* Would walking on bring this pedestrian up against a vehicle's body
+     somewhere along the next `span` units of their crossing? People wait
+     for a car stood in their way; they do not walk into it. */
+  DriveWorld.prototype.pedBlockedAhead = function(ped, span){
+    var o = Geo.ARM_VEC[ped.arm], q = Geo.rot90cw(o);
+    var nx = ped.node.x, ny = ped.node.y;
+    for (var i = 0; i < this.vehicles.length; i++){
+      var v = this.vehicles[i];
+      if (v.done || v.kind === 'tram') continue;
+      if (Math.abs(v.pos.x - nx) > 260 || Math.abs(v.pos.y - ny) > 260) continue;
+      var circ = Sim.bodyCircles(v);
+      for (var du = 4; du <= span; du += 8){
+        var u = ped.u + ped.dir*du;
+        if (Math.abs(u) > CFG.BOX + 30) break;
+        var px = nx + o.x*ped.d + q.x*u, py = ny + o.y*ped.d + q.y*u;
+        for (var k = 0; k < circ.length; k++)
+          if (Math.hypot(circ[k].x - px, circ[k].y - py) < circ[k].r + 8) return true;
+      }
+    }
+    return false;
+  };
+  /* how long the light for `arm` has shown green */
+  function greenFor(n, arm, t){
+    if (Rules.lightFor(n, arm, t) !== 'green') return -1;
+    var k = 0;
+    while (k < 40 && Rules.lightFor(n, arm, t - (k + 1)*0.5) === 'green') k++;
+    return k*0.5;
+  }
+  /* Is it this pedestrian's turn by the rules - light, or no light? */
+  DriveWorld.prototype.pedWants = function(ped){
+    if (!ped.intent || ped.wait < 0) return false;
+    var n = ped.node;
+    /* Somebody arriving at the kerb does not step up to it as a car
+       arrives that could no longer stop - they show they want to cross
+       while the traffic can still react, and then keep wanting to. */
+    if (!ped.wants && this.pedCarClose(ped, 2.6)) return false;
+    if (!n.lights) return true;
+    /* they walk with the traffic running alongside, and only set off
+       early in its green so they are across before it ends */
+    var g = greenFor(n, Geo.leftOf(ped.arm), this.t);
+    return g >= 0 && g < 6;
+  };
+  /* ...and is it safe for them to go? */
+  DriveWorld.prototype.pedMayGo = function(ped){
+    var n = ped.node;
+    if (this.pedBlockedAhead(ped, 60)) return false;     // a car standing on the crossing
+    for (var i = 0; i < this.vehicles.length; i++){
+      var v = this.vehicles[i];
+      if (v.done || v.node !== n || v.kind === 'tram') continue;
+      /* coming along the road they want to cross */
+      if (v.fromArm === ped.arm && v.crossS !== undefined && v.s < v.crossS){
+        var tt = (v.crossS - v.s) / Math.max(v.v, 1);
+        if (v.v > kmh(6) && tt < (ped.zebra ? 1.6 : 3.4)) return false;
+      }
+      /* turning in: they have priority, but nobody steps in front of a
+         car about to reach them, however slowly it is rolling */
+      if (v.toArm === ped.arm && v.exitCrossS !== undefined && v.s < v.exitCrossS){
+        var te = (v.exitCrossS - v.s) / Math.max(v.v, 1);
+        /* a car already turning through the junction has committed: do
+           not strand it in the middle of everybody else's way */
+        var committed = v.s > v.lineS;
+        if (v.v > kmh(3) && te < (committed ? 3.5 : 2.0)) return false;
+      }
+    }
+    return true;
+  };
+  /* is a car coming at this crossing, within `secs`, too fast to stop easily? */
+  DriveWorld.prototype.pedCarClose = function(ped, secs){
+    for (var i = 0; i < this.vehicles.length; i++){
+      var v = this.vehicles[i];
+      if (v.done || v.node !== ped.node || v.kind === 'tram' || v.kind === 'bike') continue;
+      var cs = (v.fromArm === ped.arm) ? v.crossS : (v.toArm === ped.arm) ? v.exitCrossS : undefined;
+      if (cs === undefined || v.s >= cs || v.v < kmh(8)) continue;
+      if ((cs - v.s) / v.v < secs) return true;
+    }
+    return false;
   };
 
   /* ---------------- rules context ---------------- */
@@ -174,6 +340,17 @@ var Drive = (function(){
     if (!a.node || !b.node || a.node !== b.node) return null;
     /* a train against a car: its own table, since a train on the main
        road still crosses the car turning off it from the same arm */
+    /* a cyclist on a cycle path: likewise their own table */
+    var ab = a.kind === 'bike', bb = b.kind === 'bike';
+    if (ab || bb){
+      if (ab && bb) return null;
+      var bike = ab ? a : b, other = ab ? b : a;
+      if (other.kind === 'tram') return null;
+      var bc = City.bikeConflict(bike.lane.from, bike.lane.off, other.fromArm, other.toArm);
+      if (!bc) return null;
+      var sbk = bike.enterS + bc.sb, soc = other.enterS + bc.sc;
+      return ab ? { sa:sbk, sb:soc } : { sa:soc, sb:sbk };
+    }
     var at = a.kind === 'tram', bt = b.kind === 'tram';
     if (at || bt){
       if (at && bt) return null;                  // separate tracks
@@ -237,12 +414,14 @@ var Drive = (function(){
       if (!far && !finished && !wedged) keep.push(v);
     }
     this.vehicles = keep;
-    var cars = keep.filter(function(v){ return v.kind !== 'tram'; }).length;
+    var cars = keep.filter(function(v){ return v.kind !== 'tram' && v.kind !== 'bike'; }).length;
     while (cars < TARGET_TRAFFIC + 1) {
       if (!this.spawnTraffic()) break;
       cars++;
     }
     this.manageTrams();
+    this.manageBikes(false);
+    this.managePeds();
   };
 
   /* ---------------- update ---------------- */
@@ -256,9 +435,19 @@ var Drive = (function(){
       if (!input.throttle && !input.brake) return;
       this.hold = null;
     }
+    /* where the driver has looked, and when: a glance over a shoulder is
+       a head turned well round, the mirror a key press */
+    var seen = this.seen || (this.seen = {});
+    if ((input.yaw || 0) > 0.95)  seen.right = this.t;
+    if ((input.yaw || 0) < -0.95) seen.left  = this.t;
+    if (input.mirror) seen.mirror = this.t;
+    /* the exam is over when the examiner's time is */
+    if (this.exam && this.t >= this.exam.seconds){ this.finish('exam_time'); return; }
     if (this.t - (this.lastSnap === undefined ? -1 : this.lastSnap) >= SNAP_EVERY) this.remember();
     this.t += dt;
     var i;
+
+    for (i = 0; i < this.peds.length; i++) this.updatePed(this.peds[i], dt);
 
     for (i = 0; i < this.vehicles.length; i++){
       var veh = this.vehicles[i];
@@ -331,6 +520,13 @@ var Drive = (function(){
     this.lastFault[id] = this.t;
     var rec = { id:id, reason:reason || null, detail:detail || null, t:this.t };
     this.faults.push(rec);
+    /* In the exam nobody stops to explain: small faults are noted
+       silently, and a serious one ends the test on the spot. */
+    if (this.exam){
+      var d = Rules.FAULTS[id];
+      if (d && d.sev === 'major'){ this.exam.failedBy = rec; this.finish('exam_fail'); }
+      return;
+    }
     this.pending = rec;
     this.paused = true;
     this.player.faultedHere = true;
@@ -376,6 +572,7 @@ var Drive = (function(){
 
   DriveWorld.prototype.remember = function(){
     var snap = { vehicles:copyFleet(this.vehicles), limit:this.sc.limit,
+                 peds:this.peds.map(copyVehicle),
                  lastFault:copyMap(this.lastFault || {}) }, self = this;
     SCALARS.forEach(function(k){ snap[k] = self[k]; });
     this.history.push(snap);
@@ -396,6 +593,7 @@ var Drive = (function(){
     this.history.length = i + 1;           // the future we are undoing
 
     this.vehicles = copyFleet(snap.vehicles);
+    this.peds = snap.peds.map(copyVehicle);
     for (var j = 0; j < this.vehicles.length; j++)
       if (this.vehicles[j].isPlayer) this.player = this.vehicles[j];
     SCALARS.forEach(function(k){ self[k] = snap[k]; });
@@ -419,6 +617,35 @@ var Drive = (function(){
     return true;
   };
 
+  /* ---------------- observation: mirror and shoulder ---------------- */
+  /* Checked as you commit to a turn. The shoulder check must come in the
+     last few seconds before it; the mirror a little earlier is fine. */
+  DriveWorld.prototype.checkEntry = function(){
+    Sim.World.prototype.checkEntry.call(this);
+    var p = this.player, turn = p.turn(), n = p.node;
+    if ((turn !== 'left' && turn !== 'right') || n.layout.type === 'roundabout') return;
+    var seen = this.seen || {};
+    var looked = seen[turn] !== undefined && this.t - seen[turn] < 6;
+    var mirrored = seen.mirror !== undefined && this.t - seen.mirror < 10;
+    var side = turn === 'right' ? { de:'rechts', en:'right' } : { de:'links', en:'left' };
+    if (!looked){
+      var cycle = this.cyclePathAcross(n, p.fromArm, turn);
+      this.fault(cycle ? 'schulterblick_rad' : 'schulterblick', null,
+        { de:'Beim Abbiegen nach ' + side.de + ' kein Blick über die ' + side.de + 'e Schulter.',
+          en:'You turned ' + side.en + ' without looking over your ' + side.en + ' shoulder.' });
+    } else if (!mirrored){
+      this.fault('spiegel');
+    }
+  };
+  /* Does turning this way off `fromArm` at node `n` take us across a
+     cycle path? Right: the one riding beside us; left: the oncoming one. */
+  DriveWorld.prototype.cyclePathAcross = function(n, fromArm, turn){
+    var want = turn === 'right' ? fromArm : Geo.opposite(fromArm);
+    return (this.map.bikeLanes || []).some(function(l){
+      return l.from === want && (l.col ? n.c === l.index : n.r === l.index);
+    });
+  };
+
   /* A knock stops you and gets explained, but the drive carries on. */
   DriveWorld.prototype.finish = function(why){
     if (why === 'crash'){ this.player.v = 0; return; }
@@ -438,8 +665,26 @@ var Drive = (function(){
     var fixed = this.fixed.map(function(f){
       return { id:f.id, def:Rules.FAULTS[f.id], reason:f.reason, detail:f.detail };
     });
-    return { score:Math.max(0, score), passed: major === 0 && this.cleared >= this.target,
-             faults:rows, fixed:fixed, reason:this.endReason, cleared:this.cleared };
+    /* the five areas the examiner scores, each with what went wrong in it */
+    var cats = Rules.CATEGORIES.map(function(c){
+      return { cat:c, faults:rows.filter(function(r){ return c.faults.indexOf(r.id) >= 0; }) };
+    });
+    var rep = { score:Math.max(0, score), passed: major === 0 && this.cleared >= this.target,
+                faults:rows, fixed:fixed, reason:this.endReason, cleared:this.cleared, categories:cats };
+    if (this.exam) rep.exam = this.examVerdict(rows, major);
+    return rep;
+  };
+  /* Like the real test: one serious fault fails it; so do many small ones,
+     or the same small one again and again - that shows it is not a slip. */
+  DriveWorld.prototype.examVerdict = function(rows, major){
+    var minors = rows.filter(function(r){ return r.def.sev === 'minor'; });
+    var byId = {};
+    minors.forEach(function(r){ byId[r.id] = (byId[r.id] || 0) + 1; });
+    var repeated = Object.keys(byId).filter(function(k){ return byId[k] >= 3; });
+    var why = major ? 'major' : minors.length >= 5 ? 'many' : repeated.length ? 'repeated'
+            : this.endReason === 'exam_time' ? null : 'ended';
+    return { passed: !why, why:why, minors:minors.length, repeated:repeated,
+             failedBy:this.exam.failedBy || null, seconds:this.exam.seconds, driven:this.t };
   };
 
   /* ---------------- navigation ---------------- */

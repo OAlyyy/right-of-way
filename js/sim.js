@@ -64,6 +64,8 @@ var Sim = (function(){
     return true;
   }
 
+  function laneClass(v){ return v.kind === 'tram' ? 't' : (v.kind === 'bike' && v.lane) ? 'b' : 'c'; }
+
   function approachV(d, dec){
     if (d <= 0) return 0;
     return Math.sqrt(2*dec*d);
@@ -98,8 +100,31 @@ var Sim = (function(){
   }
   Ped.prototype.point = function(){
     var o = Geo.ARM_VEC[this.arm], p = Geo.rot90cw(o);
-    return { x:o.x*this.d + p.x*this.u, y:o.y*this.d + p.y*this.u };
+    /* in town a pedestrian belongs to one junction; a lesson's sits at 0,0 */
+    var nx = this.node ? this.node.x : 0, ny = this.node ? this.node.y : 0;
+    return { x:nx + o.x*this.d + p.x*this.u, y:ny + o.y*this.d + p.y*this.u };
   };
+  /* Does this pedestrian have the right to be let across by `veh`?
+     A zebra (and every crossing in a lesson) - always. Otherwise only
+     traffic turning into their road must let them go (Sec. 9 (3)). */
+  function pedPriority(ped, veh, exitSide){
+    if (ped.zebra || !ped.node) return true;
+    return exitSide && veh.turn() !== 'straight';
+  }
+  /* A waiting pedestrian who would step out right now if the road let
+     them: on their green at lights, whenever they like otherwise. */
+  function pedWants(ped){
+    return ped.state === 'waiting' && (ped.wants !== undefined ? ped.wants : ped.intent);
+  }
+  /* Someone walking across in front of this vehicle: from the moment they
+     step off the kerb until they are past its lane. (A lesson keeps its
+     original, simpler test: anyone on the carriageway.) */
+  function pedCrossing(ped, exitSide){
+    if (ped.state !== 'walking') return false;
+    if (!ped.node) return ped.onRoad();
+    var lane = exitSide ? CFG.HALF : -CFG.HALF;
+    return ped.dir*(ped.u - lane) < CFG.CAR_W/2 + 10 && Math.abs(ped.u) < CFG.BOX + 26;
+  }
   Ped.prototype.onRoad = function(){ return Math.abs(this.u) < CFG.BOX + 4; };
 
   /* ---------------- World ---------------- */
@@ -295,19 +320,22 @@ var Sim = (function(){
     /* --- pedestrians on a crossing ahead of us --- */
     for (var pi=0; pi<this.peds.length; pi++){
       var ped = this.peds[pi];
-      var cs = null;
+      if (ped.node !== veh.node || veh.kind === 'tram' || veh.kind === 'bike') continue;
+      var cs = null, exitSide = false;
       if (ped.arm === veh.fromArm && veh.crossS !== undefined && veh.s < veh.crossS) cs = veh.crossS;
-      if (ped.arm === veh.toArm && veh.exitCrossS !== undefined && veh.s < veh.exitCrossS) cs = veh.exitCrossS;
+      if (ped.arm === veh.toArm && veh.exitCrossS !== undefined && veh.s < veh.exitCrossS){ cs = veh.exitCrossS; exitSide = true; }
       if (cs === null) continue;
-      var blocking = ped.state === 'walking' ? ped.onRoad()
-                   : (ped.intent && ped.state === 'waiting');
-      /* only the half of the road we are about to drive over matters,
-         plus a safety margin on the far side                          */
-      if (ped.state === 'walking'){
-        var side = Geo.rot90cw(Geo.ARM_VEC[veh.fromArm]);
-        blocking = ped.onRoad();
-      }
-      if (blocking) want(approachV(cs - veh.s - 12, CFG.AI_DEC), 'ped', 'ped');
+      /* Nobody drives into a person on the road. Somebody waiting is let
+         across only by those who owe it to them - otherwise a car and a
+         pedestrian each wait for the other for ever. */
+      var blocking = ped.state === 'walking' ? pedCrossing(ped, exitSide)
+                   : (pedWants(ped) && pedPriority(ped, veh, exitSide));
+      if (!blocking) continue;
+      /* Sec. 11: people on the crossing we leave by means the junction
+         cannot be cleared - wait at our own line, not in everyone's way */
+      if (exitSide && veh.s < veh.lineS && ped.node)
+        want(approachV(veh.lineS - veh.s - 4, CFG.AI_DEC), 'ped', 'ped');
+      else want(approachV(cs - veh.s - 12, CFG.AI_DEC), 'ped', 'ped');
     }
     /* --- keeping our distance from the car in front --- */
     var lead = this.leaderOf(veh);
@@ -395,8 +423,9 @@ var Sim = (function(){
     for (var i=0;i<this.vehicles.length;i++){
       var o = this.vehicles[i];
       if (o === veh || o.done) continue;
-      /* a train on its track is never "the car in front" of a car */
-      if ((o.kind === 'tram') !== (veh.kind === 'tram')) continue;
+      /* a train on its track or a cyclist on a cycle path is never "the
+         car in front" of a car, nor the other way round */
+      if (laneClass(o) !== laneClass(veh)) continue;
       var dx = o.pos.x - veh.pos.x, dy = o.pos.y - veh.pos.y;
       if (Math.hypot(dx,dy) > 420) continue;
       var lon =  dx*c + dy*s;
@@ -491,12 +520,24 @@ var Sim = (function(){
 
   World.prototype.updatePed = function(ped, dt){
     if (ped.state === 'walking'){
+      /* in town: stop short of a car in the way - and if it just stands
+         there, walk round it the way people do */
+      if (ped.node && this.pedBlockedAhead && (ped.blockedFor || 0) < 1.5 && this.pedBlockedAhead(ped, 14)){
+        ped.blockedFor = (ped.blockedFor || 0) + dt;
+        return;
+      }
       ped.u += ped.dir*CFG.PED_V*dt;
       if (Math.abs(ped.u) > CFG.BOX + 26) ped.state = 'done';
       return;
     }
     if (ped.state !== 'waiting') return;
     ped.wait += dt;
+    /* in town: their light (if any) first, then the traffic */
+    if (ped.node && this.pedWants){
+      ped.wants = this.pedWants(ped);
+      if (ped.wants && this.pedMayGo(ped)) ped.state = 'walking';
+      return;
+    }
     /* step out when the nearest approaching car is far enough away or slow */
     var safe = true;
     for (var i=0;i<this.vehicles.length;i++){
@@ -600,7 +641,9 @@ var Sim = (function(){
       this.checkEntry();
     }
     /* --- stopped past the line while obliged to give way --- */
-    if (p.v < kmh(1.5) && p.s > p.lineS + 10 && p.s < p.lineS + 80 && this.mustGiveWayHere())
+    /* (waiting for people on the crossing beyond the line is where you
+       are meant to wait, so that does not count) */
+    if (p.v < kmh(1.5) && p.s > p.lineS + 10 && p.s < p.lineS + 80 && this.mustGiveWayHere() && !this.pedBlocking())
       this.fault('haltelinie');
 
     /* --- pedestrian crossings --- */
@@ -666,6 +709,7 @@ var Sim = (function(){
   World.prototype.faultForReason = function(reason){
     if (reason === 'einsatz') return 'einsatz_blockiert';
     if (reason === 'bus')     return 'bus_behindert';
+    if (reason === 'rad_abbiegen') return 'abbiegen_rad';
     return 'vorfahrt';
   };
 
@@ -677,10 +721,14 @@ var Sim = (function(){
     else if (o.fromArm === Geo.opposite(p.fromArm)){ de = ' aus dem Gegenverkehr'; en = ' coming the other way'; }
     var whatDe = o.kind === 'tram' ? 'Die Strassenbahn'
                : o.kind === 'bus'  ? 'Der Linienbus'
+               : o.kind === 'bike' ? 'Der Radfahrer'
                : o.emergency       ? 'Das Einsatzfahrzeug' : 'Das Fahrzeug';
     var whatEn = o.kind === 'tram' ? 'The tram'
                : o.kind === 'bus'  ? 'The bus'
+               : o.kind === 'bike' ? 'The cyclist'
                : o.emergency       ? 'The emergency vehicle' : 'The car';
+    /* a cyclist beside us going our way comes from behind, not from a side */
+    if (o.kind === 'bike' && o.fromArm === p.fromArm){ de = ' von hinten'; en = ' coming up behind you'; }
     return { de: whatDe + (de||''), en: whatEn + (en||'') };
   };
 
@@ -695,13 +743,22 @@ var Sim = (function(){
        lifted off precisely because you were waiting at the line. Once it
        has genuinely come to a stand we take it at its word and go. */
     var easingForUs = (o.brakeCause === p) && (o.stoppedFor || 0) < 3;
-    if (!easingForUs){
+    /* nor is a car that has only stopped to let people cross: it goes the
+       moment they are over, and it still has priority when it does */
+    var waitingForPeople = o.brakeKind === 'ped' && o.s < c.sb;
+    if (!easingForUs && !waitingForPeople){
       if (!isApproaching(o)) return false;      // waiting at its own line
       if (o.v < kmh(5)) return false;           // standing still
     }
     var freeV  = Math.max(o.v, o.cruise*0.8);
     var tOther = (c.sb - o.s - (o.len*0.5 + 18)) / Math.max(freeV, kmh(10));
-    var tClear = (c.sa + p.len*0.5 + 24 - p.s) / Math.max(p.v, kmh(14));
+    /* how long we really need to get clear from the speed we have now,
+       pulling away at a normal rate - from a standstill that is longer
+       than any steady speed would suggest */
+    var dist = Math.max(0, c.sa + p.len*0.5 + 24 - p.s);
+    var acc = (p.isPlayer ? CFG.ACC : CFG.AI_ACC) * 0.8;
+    var tAcc = (-p.v + Math.sqrt(p.v*p.v + 2*acc*dist)) / acc;
+    var tClear = Math.min(tAcc, dist / Math.max(p.v, kmh(14)) + 1.2);
     return tOther < tClear + 0.9;
   };
 
@@ -728,10 +785,13 @@ var Sim = (function(){
     return false;
   };
   World.prototype.pedBlocking = function(){
+    var p = this.player;
     for (var i=0;i<this.peds.length;i++){
       var ped = this.peds[i];
+      if (ped.node !== p.node) continue;
+      if (ped.arm !== p.fromArm && ped.arm !== p.toArm) continue;
       if (ped.state === 'walking' && ped.onRoad()) return true;
-      if (ped.state === 'waiting' && ped.intent) return true;
+      if (pedWants(ped) && pedPriority(ped, p, ped.arm === p.toArm)) return true;
     }
     return false;
   };
@@ -788,21 +848,35 @@ var Sim = (function(){
     var p = this.player;
     for (var i=0;i<this.peds.length;i++){
       var ped = this.peds[i];
+      if (ped.node !== p.node) continue;
+      var exitSide = (ped.arm === p.toArm && p.exitCrossS !== undefined);
       var cs = (ped.arm === p.fromArm && p.crossS !== undefined) ? p.crossS
-             : (ped.arm === p.toArm && p.exitCrossS !== undefined) ? p.exitCrossS : null;
+             : exitSide ? p.exitCrossS : null;
       if (cs === null) continue;
+      if (cs === p.crossS) exitSide = false;
       if (prevS < cs && p.s >= cs){
-        var turning = (ped.arm === p.toArm && p.toArm !== p.fromArm);
-        if (ped.state === 'walking' && ped.onRoad())
-          this.fault(turning ? 'abbiegen_fussgaenger' : 'fussgaenger', null,
+        var turning = exitSide && p.turn() !== 'straight';
+        var owed = pedPriority(ped, p, exitSide);
+        var id = turning ? 'abbiegen_fussgaenger' : 'fussgaenger';
+        /* Someone already crossing: a fault if they had the right to be
+           there, or - even if they had not - if we drove at them. */
+        if (pedCrossing(ped, exitSide) && (owed || this.pedInPath(p, ped, exitSide)))
+          this.fault(id, null,
             { de:'Der Fussgänger war schon auf der Fahrbahn.',
               en:'The pedestrian was already on the road.' });
-        else if (ped.state === 'waiting' && ped.intent && p.v > kmh(12))
-          this.fault(turning ? 'abbiegen_fussgaenger' : 'fussgaenger', null,
+        else if (pedWants(ped) && owed && p.v > kmh(12))
+          this.fault(id, null,
             { de:'Der Fussgänger wartete erkennbar am Bordstein.',
               en:'The pedestrian was clearly waiting at the kerb.' });
       }
     }
+  };
+  /* is a pedestrian on the road in, or about to walk into, our lane? */
+  World.prototype.pedInPath = function(p, ped, exitSide){
+    var lane = exitSide ? CFG.HALF : -CFG.HALF;       // our lane, across the crossing
+    var ahead = ped.u + ped.dir*CFG.PED_V*1.0;        // where they will be in a second
+    var lo = Math.min(ped.u, ahead), hi = Math.max(ped.u, ahead);
+    return hi > lane - (CFG.CAR_W/2 + 10) && lo < lane + (CFG.CAR_W/2 + 10);
   };
 
   /* ---------------- collisions ---------------- */
@@ -831,11 +905,13 @@ var Sim = (function(){
         }
       }
     }
-    for (i=0;i<this.peds.length;i++){
+    /* a car standing still does not run anybody over */
+    for (i=0;i<this.peds.length && p.v > kmh(3);i++){
       var ped = this.peds[i];
       if (ped.state === 'done') continue;
       var pp = ped.point();
-      for (k=0;k<pc.length;k++){
+      /* only the front of the car, driving on, can run somebody down */
+      for (k=Math.floor(pc.length/2);k<pc.length;k++){
         if (Math.hypot(pc[k].x-pp.x, pc[k].y-pp.y) < pc[k].r + 9){
           this.fault('ped_kollision');
           this.crashPoint = pp;
@@ -950,5 +1026,6 @@ var Sim = (function(){
   };
 
   return { World:World, Vehicle:Vehicle, Ped:Ped, curveProfile:curveProfile,
-           CROSS_MID:CROSS_MID, CROSS_HALF:CROSS_HALF, proj:proj };
+           CROSS_MID:CROSS_MID, CROSS_HALF:CROSS_HALF, proj:proj, bodyCircles:bodyCircles,
+           pedCrossing:pedCrossing };
 })();

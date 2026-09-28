@@ -43,8 +43,20 @@
     merk: { de:'Wer über die Gleise abbiegt, lässt die Bahn durch – auch bei Grün, auch von hinten.',
             en:'Turning across the tracks, let the train through – even on green, even from behind.' }
   };
+  /* the driving test: what the examiner expects */
+  var EXAM_MINUTES = 15;
+  var EXAM_BRIEF = {
+    task: { de:'Die Prüfungsfahrt dauert ' + EXAM_MINUTES + ' Minuten. Der Prüfer sagt dir, wo es langgeht. ' +
+                'Es gibt keine Hinweise und kein Zurückspulen. Kleine Fehler werden notiert; ein schwerer ' +
+                'Fehler beendet die Prüfung sofort. Vor jedem Abbiegen: Spiegel (M), Blinker, Schulterblick (Q/E).',
+            en:'The test drive lasts ' + EXAM_MINUTES + ' minutes. The examiner tells you where to go. ' +
+               'No hints, no rewinding. Small faults are noted; one serious fault ends the test at once. ' +
+               'Before every turn: mirror (M), indicator, shoulder check (Q/E).' },
+    merk: { de:'Nicht bestanden bei einem schweren Fehler, bei fünf kleinen, oder wenn derselbe kleine dreimal passiert.',
+            en:'You fail on one serious fault, on five small ones, or on the same small one three times.' }
+  };
   var input = { throttle:false, brake:false, indicator:'off' };
-  var look  = { left:false, right:false };
+  var look  = { left:false, right:false, mirror:false };
 
   function el(id){ return document.getElementById(id); }
   function show(id, on){ el(id).classList.toggle('hidden', !on); }
@@ -258,8 +270,8 @@
   /* ---------------- free drive ---------------- */
   function fillDriveBrief(){
     var w = state.world, titlePair = { de:w.sc.title, en:w.sc.en };
-    var B = w.map.preset ? FRANKFURT_BRIEF : DRIVE_BRIEF;
-    el('brief-group').textContent   = I18N.t('drive.cta.button');
+    var B = w.exam ? EXAM_BRIEF : w.map.preset ? FRANKFURT_BRIEF : DRIVE_BRIEF;
+    el('brief-group').textContent   = I18N.t(w.exam ? 'exam.button' : 'drive.cta.button');
     el('brief-title').textContent   = I18N.pick(titlePair);
     el('brief-en').textContent      = I18N.other(titlePair);
     el('brief-task').textContent    = I18N.pick(B.task);
@@ -275,12 +287,15 @@
 
   function startDrive(which){
     state.mode = 'drive';
-    if (which === 'frankfurt' || which === 'random') state.driveMap = which;
+    if (which === 'frankfurt' || which === 'random' || which === 'exam') state.driveMap = which;
+    var exam = state.driveMap === 'exam';
     var seed = Math.floor(Math.random()*100000);
     state.world = new Drive.DriveWorld({ seed:seed, cols:6, rows:5, target:1e9,
-      preset: state.driveMap === 'random' ? null : 'eschersheim' });
+      preset: state.driveMap === 'random' ? null : 'eschersheim',
+      exam: exam ? { minutes:EXAM_MINUTES } : null });
+    state.spoken = null;
     input.throttle = false; input.brake = false; input.indicator = 'off';
-    look.left = false; look.right = false;
+    look.left = false; look.right = false; look.mirror = false;
     state.yaw = 0; state.yawTarget = 0; state.drag = null;
     el('pedal-gas').classList.remove('down');
     el('pedal-brake').classList.remove('down');
@@ -364,6 +379,13 @@
     verdict.textContent = I18N.t('drive.result.title');
     verdict.className = 'verdict ' + (majors ? 'bad' : 'ok');
     el('res-sub').textContent = I18N.t('drive.result.sub', { a:rep.cleared });
+    if (rep.exam){
+      var ex = rep.exam;
+      verdict.textContent = I18N.t(ex.passed ? 'exam.passed' : 'exam.failed');
+      verdict.className = 'verdict ' + (ex.passed ? 'ok' : 'bad');
+      el('res-sub').textContent = ex.passed ? I18N.t('exam.sub.pass', { n:ex.minors })
+        : I18N.t('exam.sub.' + ex.why, { n:ex.minors });
+    }
 
     var list = el('res-faults');
     clear(list);
@@ -389,13 +411,33 @@
       });
     }
     clear(el('res-points'));
+    el('res-points').appendChild(checklist(rep));
 
     refreshResultLabels();
     show('overlay-result', true);
     draw();
   }
+  /* the examiner's scoring sheet: five areas, each clean or not */
+  function checklist(rep){
+    var box = make('div', 'checklist');
+    box.appendChild(make('h4', 'eyebrow', I18N.t('exam.checklist')));
+    (rep.categories || []).forEach(function(c){
+      var row = make('div', 'check-row ' + (c.faults.length ? 'bad' : 'ok'));
+      row.appendChild(make('span', 'check-mark', c.faults.length ? '✗' : '✓'));
+      var t = make('span', 'check-name', I18N.pick(c.cat));
+      row.appendChild(t);
+      var counts = {};
+      c.faults.forEach(function(f){ var k = I18N.pick(f.def.title); counts[k] = (counts[k] || 0) + 1; });
+      var what = Object.keys(counts).map(function(k){ return k + (counts[k] > 1 ? ' ×' + counts[k] : ''); }).join(', ');
+      row.appendChild(make('span', 'check-what', what || I18N.t('exam.ok')));
+      box.appendChild(row);
+    });
+    return box;
+  }
   function endDrive(){
-    if (state.mode === 'drive' && state.world) driveResult();
+    if (state.mode !== 'drive' || !state.world) return;
+    if (state.world.exam && state.world.state === 'run') state.world.finish('exam_end');
+    driveResult();
   }
 
   /* ---------------- view ---------------- */
@@ -430,7 +472,11 @@
     state.yaw += (state.yawTarget - state.yaw) * Math.min(1, dt*8);
     if (Math.abs(state.yaw - state.yawTarget) < 0.002) state.yaw = state.yawTarget;
 
+    /* the examiner sees where you look: head turned, mirror checked */
+    input.yaw = state.yaw;
+    input.mirror = look.mirror;
     state.world.update(dt, input);
+    if (state.world.exam) examiner(state.world);
     updateHud();
     draw();
 
@@ -442,6 +488,45 @@
     } else if (state.world.state !== 'run' && state.world.endTimer > 0.9){
       finishRun();
     }
+  }
+
+  /* ---------------- the examiner's voice ---------------- */
+  /* Directions as a German examiner gives them, once per junction, a
+     little before you reach it - and the words nobody wants to hear. */
+  var ORD = { right:'erste', straight:'zweite', left:'dritte' };
+  function examiner(w){
+    var p = w.player, st = p.steps && p.steps[p.stepIdx];
+    if (w.state !== 'run'){
+      if (w.endReason === 'exam_fail' && state.spoken !== 'end'){
+        state.spoken = 'end';
+        say('Bitte fahren Sie rechts ran. Die Prüfung ist leider beendet.');
+      }
+      return;
+    }
+    if (!st) return;
+    var key = p.stepIdx + '@' + st.node.id;
+    var dist = (st.junctionS - p.s) / CFG.PPM;
+    if (state.spoken === key || dist > 75 || dist < 5) return;
+    state.spoken = key;
+    var turn = Geo.turnOf(st.from, st.to), street = w.map.streetName(st.node, st.to);
+    var text;
+    if (st.node.layout.type === 'roundabout')
+      text = 'Im Kreisverkehr bitte die ' + ORD[turn] + ' Ausfahrt nehmen.';
+    else if (turn === 'straight')
+      text = p.stepIdx % 3 === 0 ? 'Bitte weiter geradeaus.' : '';
+    else
+      text = 'An der nächsten Kreuzung bitte ' + (turn === 'right' ? 'rechts' : 'links') +
+             ' abbiegen, in die ' + street + '.';
+    if (text) say(text);
+  }
+  function say(text){
+    try {
+      if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') return;
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = 'de-DE'; u.rate = 0.95;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    } catch (e){}
   }
 
   function draw(){
@@ -456,7 +541,7 @@
         ctx.setTransform(1,0,0,1,0,0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
-        GL3D.frame(state.world, state.yaw, W, H);
+        GL3D.frame(state.world, state.yaw, W, H, { mirror:look.mirror });
       } else POV.frame(ctx, W, H, state.world, state.yaw);
       drawMinimap();
     } else {
@@ -479,7 +564,13 @@
     sp.textContent = v;
     sp.className = v > w.sc.limit + 4 ? 'over' : '';
     el('hud-limit').textContent  = w.sc.limit;
-    if (state.mode === 'drive'){
+    if (state.mode === 'drive' && w.exam){
+      var left = Math.max(0, Math.ceil(w.exam.seconds - w.t));
+      el('hud-time-label').textContent = I18N.t('exam.timeLeft');
+      el('hud-time').textContent = Math.floor(left/60) + ':' + ('0' + left % 60).slice(-2);
+      var ins = w.instruction();
+      el('hud-task').textContent = ins ? I18N.pick(ins) : '';
+    } else if (state.mode === 'drive'){
       el('hud-time-label').textContent = I18N.t('hud.cleared');
       el('hud-time').textContent = w.cleared;
       var instr = w.instruction();
@@ -496,7 +587,8 @@
     el('look-l').classList.toggle('on', state.yaw < -0.05);
     el('look-r').classList.toggle('on', state.yaw >  0.05);
 
-    var h = state.hints ? I18N.pick(w.hint()) : '';
+    /* nobody whispers the answers in an exam */
+    var h = state.hints && !w.exam ? I18N.pick(w.hint()) : '';
     /* after a rewind, always say what you are retrying and how to get it right */
     if (w.hold){
       var fd = Rules.FAULTS[w.hold.fault.id];
@@ -712,6 +804,7 @@
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = true; el('pedal-brake').classList.add('down'); }
     if (k === 'q' || k === 'arrowleft')  look.left = true;
     if (k === 'e' || k === 'arrowright') look.right = true;
+    if (k === 'm') look.mirror = true;
     if (k === 'a') setIndicator('left');
     if (k === 'd') setIndicator('right');
     if (k === 'x') input.indicator = 'off';
@@ -723,6 +816,7 @@
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = false; el('pedal-brake').classList.remove('down'); }
     if (k === 'q' || k === 'arrowleft')  look.left = false;
     if (k === 'e' || k === 'arrowright') look.right = false;
+    if (k === 'm') look.mirror = false;
   });
   window.addEventListener('blur', function(){
     input.throttle = false; input.brake = false;
@@ -792,6 +886,7 @@
     hold('pedal-brake', function(){ input.brake = true; },     function(){ input.brake = false; });
     hold('look-l',      function(){ look.left = true; },       function(){ look.left = false; });
     hold('look-r',      function(){ look.right = true; },      function(){ look.right = false; });
+    hold('look-m',      function(){ look.mirror = true; },     function(){ look.mirror = false; });
     initDragLook();
 
     el('btn-start').onclick = beginDriving;
@@ -802,6 +897,7 @@
     el('btn-quit').onclick  = toMenu;
     el('btn-drive').onclick = function(){ startDrive('frankfurt'); };
     el('btn-drive-random').onclick = function(){ startDrive('random'); };
+    el('btn-exam').onclick = function(){ startDrive('exam'); };
     el('btn-fault-continue').onclick = resumeDrive;
     el('btn-fault-rewind').onclick = rewindDrive;
     el('btn-end-drive').onclick = endDrive;
