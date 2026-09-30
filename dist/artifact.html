@@ -685,11 +685,11 @@ kbd{
       <div id="hud">
         <div class="hud-left">
           <div class="cluster-dash readout">
-            <button id="ind-l" class="ind" type="button" title="A">
+            <button id="ind-l" class="ind" type="button" title="Q">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4 4 12l10 8v-5h6V9h-6z"/></svg>
             </button>
             <div class="gauge"><span id="hud-speed">0</span><small>km/h</small></div>
-            <button id="ind-r" class="ind" type="button" title="D">
+            <button id="ind-r" class="ind" type="button" title="E">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l10 8-10 8v-5H4V9h6z"/></svg>
             </button>
           </div>
@@ -712,11 +712,11 @@ kbd{
 
       <div class="controls">
         <div class="cluster">
-          <button id="look-l" class="ind look" type="button" title="Q">
+          <button id="look-l" class="ind look" type="button" title="&larr;">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4 4 12l10 8v-5h6V9h-6z"/></svg>
             <small data-t="look.label">LOOK</small>
           </button>
-          <button id="look-r" class="ind look" type="button" title="E">
+          <button id="look-r" class="ind look" type="button" title="&rarr;">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4l10 8-10 8v-5H4V9h6z"/></svg>
             <small data-t="look.label">LOOK</small>
           </button>
@@ -812,10 +812,10 @@ kbd{
         <table class="ctrl">
           <tr><td><kbd>W</kbd> <kbd>&uarr;</kbd></td><td data-t="ctrl.throttle"></td></tr>
           <tr><td><kbd>S</kbd> <kbd>&darr;</kbd></td><td data-t="ctrl.brake"></td></tr>
-          <tr><td><kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td data-t="ctrl.steer"></td></tr>
-          <tr><td><kbd>Q</kbd> <kbd>E</kbd></td><td data-t="ctrl.look"></td></tr>
+          <tr><td><kbd>A</kbd> <kbd>D</kbd></td><td data-t="ctrl.steer"></td></tr>
+          <tr><td><kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td data-t="ctrl.look"></td></tr>
           <tr><td><kbd>M</kbd></td><td data-t="ctrl.mirror"></td></tr>
-          <tr><td><kbd>A</kbd> <kbd>D</kbd></td><td data-t="ctrl.indicators"></td></tr>
+          <tr><td><kbd>Q</kbd> <kbd>E</kbd></td><td data-t="ctrl.indicators"></td></tr>
           <tr><td><kbd>V</kbd></td><td data-t="ctrl.view"></td></tr>
           <tr><td><kbd>R</kbd></td><td data-t="ctrl.restart"></td></tr>
           <tr><td><kbd>H</kbd></td><td data-t="ctrl.hints"></td></tr>
@@ -1279,7 +1279,7 @@ var I18N = (function(){
       'ctrl.look':'Look left / right', 'ctrl.view':'Driver view / map view',
       'pedal.gas':'GAS', 'pedal.brake':'BRAKE',
       'look.label':'LOOK', 'view.toTop':'MAP', 'view.toPov':'DRIVER',
-      'keys.look':'Look', 'keys.view':'View',
+      'keys.look':'Look', 'keys.view':'View', 'keys.steer':'Steer', 'keys.mirror':'Mirror',
       'brief.drag':'Drag the road, or hold the LOOK buttons, to check left and right.',
       'ind.left':'Indicate left', 'ind.right':'Indicate right',
 
@@ -1317,7 +1317,7 @@ var I18N = (function(){
       'drive.hold.retrying':'Retrying: {what}',
       'drive.end':'End drive', 'drive.endShort':'End',
       'mirror.label':'MIRROR', 'ctrl.mirror':'Check the mirror',
-      'ctrl.steer':'Steer (free drive & test; or drag the road)', 'ctrl.steerMode':'You steer / car steers',
+      'ctrl.steer':'Steer (free drive & test; on a phone drag the road)', 'ctrl.steerMode':'You steer / car steers',
       'steer.manual':'Steering: you', 'steer.auto':'Steering: car',
       'exam.button':'Take the test',
       'exam.timeLeft':'Left',
@@ -1370,7 +1370,7 @@ var I18N = (function(){
       'ctrl.look':'Nach links / rechts schauen', 'ctrl.view':'Fahrersicht / Kartensicht',
       'pedal.gas':'GAS', 'pedal.brake':'BREMSE',
       'look.label':'BLICK', 'view.toTop':'KARTE', 'view.toPov':'FAHRER',
-      'keys.look':'Blick', 'keys.view':'Ansicht',
+      'keys.look':'Blick', 'keys.view':'Ansicht', 'keys.steer':'Lenken', 'keys.mirror':'Spiegel',
       'brief.drag':'Zieh die Strasse zur Seite oder halte die BLICK-Tasten, um nach links und rechts zu schauen.',
       'ind.left':'Blinker links', 'ind.right':'Blinker rechts',
 
@@ -1408,7 +1408,7 @@ var I18N = (function(){
       'drive.hold.retrying':'Neuer Versuch: {what}',
       'drive.end':'Fahrt beenden', 'drive.endShort':'Ende',
       'mirror.label':'SPIEGEL', 'ctrl.mirror':'In den Spiegel schauen',
-      'ctrl.steer':'Lenken (freie Fahrt & Prüfung; oder Strasse ziehen)', 'ctrl.steerMode':'Selbst lenken / Auto lenkt',
+      'ctrl.steer':'Lenken (freie Fahrt & Prüfung; am Handy Strasse ziehen)', 'ctrl.steerMode':'Selbst lenken / Auto lenkt',
       'steer.manual':'Lenken: du', 'steer.auto':'Lenken: Auto',
       'exam.button':'Prüfung fahren',
       'exam.timeLeft':'Rest',
@@ -2036,7 +2036,7 @@ var Rules = (function(){
         en:'Before a turn you look over your shoulder into the blind spot, which no mirror shows. Turning right across a cycle path without it fails the real exam.' },
       tip:{
         de:'Reihenfolge: Innenspiegel – Blinker – Aussenspiegel – Schulterblick – abbiegen.',
-        en:'Order: mirror – indicate – door mirror – shoulder check – turn. (Q / E to look, M for the mirror.)' }
+        en:'Order: mirror – indicate – door mirror – shoulder check – turn. (← / → to look, M for the mirror.)' }
     },
     schulterblick_rad: {
       pts:35, sev:'major', law:'§ 9 (1) StVO',
@@ -2046,7 +2046,7 @@ var Rules = (function(){
         en:'You turned across a cycle path without looking over your shoulder. A cyclist in your blind spot would have been invisible to you – this is the most common reason people fail the exam.' },
       tip:{
         de:'Kurz vor dem Abbiegen, wenn du schon langsam bist: Schulterblick zur Abbiegeseite.',
-        en:'Just before the turn, once you are slow: look over the shoulder on the side you turn to (E for right, Q for left).' }
+        en:'Just before the turn, once you are slow: look over the shoulder on the side you turn to (→ for right, ← for left).' }
     },
     spiegel: {
       pts:5, sev:'minor', law:'§ 9 (1) StVO',
@@ -5186,6 +5186,17 @@ var Drive = (function(){
       worst = Math.max(worst, this.map.offRoad(x, y));
     }, this);
     p.offRoad = worst;
+    /* the cars parked along the quiet streets are solid */
+    if (typeof CityView !== 'undefined' && p.v > kmh(2)){
+      var hit = null;
+      [[hl, hw], [hl, -hw], [hl, 0]].forEach(function(k){
+        if (!hit) hit = CityView.parkedAt(this.map, p.pos.x + c*k[0] - s*k[1], p.pos.y + s*k[0] + c*k[1], 0);
+      }, this);
+      if (hit){
+        this.fault('kollision', null, { de:'Ein parkendes Auto.', en:'A parked car.' });
+        p.v = 0;
+      }
+    }
     if (worst > 3 && p.v > kmh(2)){
       this.fault('bordstein', null, { de:'Mit dem Rad über den Bordstein.', en:'A wheel went over the kerb.' });
       p.v = Math.max(0, p.v - 60*CFG.PPM*dt*(worst > 14 ? 1 : 0.15));   // a knock, or a wall
@@ -5374,7 +5385,7 @@ var Drive = (function(){
     var looked = seen[w.side] !== undefined && this.t - seen[w.side] < LOOK_WINDOW;
     var mirrored = seen.mirror !== undefined && this.t - seen.mirror < MIRROR_WINDOW;
     var side = w.side === 'right' ? { de:'rechts', en:'right' } : { de:'links', en:'left' };
-    var key = w.side === 'right' ? 'E' : 'Q';
+    var key = w.side === 'right' ? '→' : '←';
     if (!looked){
       var cycle = this.cyclePathAcross(w.node, w.fromArm, w.side);
       this.fault(cycle ? 'schulterblick_rad' : 'schulterblick', null,
@@ -5519,16 +5530,27 @@ var CityView = (function(){
     function house(ax, ay, bx, by, front, onMain){
       if (rand() < 0.10) return;                       // a gap: garden, driveway
       var yard = rand() < 0.5 ? 0 : 10 + rand()*24;    // some sit behind a front garden
+      /* a front garden is fenced off from the pavement by a low hedge */
+      var hedge = null;
+      if (yard){
+        if (front === 'N') hedge = { x0:ax, y0:ay, x1:bx, y1:ay + 7 };
+        if (front === 'S') hedge = { x0:ax, y0:by - 7, x1:bx, y1:by };
+        if (front === 'W') hedge = { x0:ax, y0:ay, x1:ax + 7, y1:by };
+        if (front === 'E') hedge = { x0:bx - 7, y0:ay, x1:bx, y1:by };
+      }
       if (front === 'N') ay += yard; if (front === 'S') by -= yard;
       if (front === 'W') ax += yard; if (front === 'E') bx -= yard;
       var floors = onMain ? 4 + Math.floor(rand()*2) : 2 + Math.floor(rand()*3);
       var h = (floors*3.0 + 0.6) * M;
+      var shop = onMain && rand() < 0.7;
       blk.houses.push({
         x0:ax, y0:ay, x1:bx, y1:by, h:h, floors:floors, front:front,
         color:FACADES[Math.floor(rand()*FACADES.length)],
         roof: rand() < 0.72 ? ROOFS[Math.floor(rand()*ROOFS.length)] : null,
         roofH:(1.8 + rand()*1.6) * M,
-        shop: onMain && rand() < 0.7,
+        shop: shop,
+        balcony: floors >= 3 && rand() < 0.5,          // a stack of balconies on the street side
+        hedge: hedge,
         seed: Math.floor(rand()*1e6)
       });
     }
@@ -5634,9 +5656,56 @@ var CityView = (function(){
     for (c = 0; c < cols; c++) alongStreet(true, c);
     for (r = 0; r < rows; r++) alongStreet(false, r);
 
+    /* Along every stretch of street between two junctions: cars parked at
+       the kerb of the quiet streets (half on the pavement, as Frankfurt
+       parks), people walking the pavements, and the odd manhole cover.
+       Everything keeps clear of the junctions themselves. */
+    var parked = [], walkers = [], manholes = [];
+    var CAR_COLS = ['#c9ccd1','#b7bbc1','#6d7177','#2b2f36','#1d1f23','#f1f1ee','#e4e5e2',
+                    '#1f3a5f','#2d4a6e','#9e2b25','#3d5a4a','#8a7f6d'];
+    function stretches(isCol, i){
+      var main = isCol ? i === map.priCol : i === map.priRow;
+      var line = isCol ? colX(i) : rowY(i);
+      var n = isCol ? rows : cols;
+      for (var k = 0; k < n - 1; k++){
+        var a = isCol ? rowY(k) : colX(k), b = isCol ? rowY(k+1) : colX(k+1);
+        var clear = CFG.BOX + City.CORNER_R + 40;
+        var from = a + clear, to = b - clear;
+        [-1, 1].forEach(function(side){
+          var railSide = isCol && i === map.railCol && side > 0;
+          /* parked cars, facing the way the traffic on their side runs */
+          if (!main && !railSide){
+            var h = isCol ? (side > 0 ? -Math.PI/2 : Math.PI/2) : (side > 0 ? 0 : Math.PI);
+            for (var t = from + rand()*30; t < to - 52; ){
+              if (rand() < 0.7){
+                var along = t + 26;
+                parked.push({ x:isCol ? line + side*57 : along, y:isCol ? along : line + side*57, h:h, col:isCol,
+                              color:rand() < 0.05 ? '#efe6c8' : CAR_COLS[Math.floor(rand()*CAR_COLS.length)],
+                              type:Math.floor(rand()*5), seed:Math.floor(rand()*1e6) });
+              }
+              t += 52 + 12 + rand()*34;
+            }
+          }
+          /* somebody walking this pavement, to and fro */
+          if (rand() < 0.85){
+            var off = railSide ? City.RAIL.bed[1] + 6 + 12 + WALK*0.5 : main ? CFG.BOX + 16 : KERB + WALK - 8;
+            walkers.push({ col:isCol, line:line, side:side, off:off, a:from, b:to,
+                           phase:rand(), speed:(1.1 + rand()*0.5)*M, look:rand() });
+          }
+        });
+        if (rand() < 0.8){
+          var m = a + (b - a)*(0.25 + rand()*0.5), lat = (rand() < 0.5 ? -1 : 1)*CFG.HALF*0.9;
+          manholes.push({ x:isCol ? line + lat : m, y:isCol ? m : line + lat });
+        }
+      }
+    }
+    for (c = 0; c < cols; c++) stretches(true, c);
+    for (r = 0; r < rows; r++) stretches(false, r);
+
     var houses = [];
     blocks.forEach(function(b){ houses = houses.concat(b.houses); });
     map._view = { blocks:blocks, houses:houses, trees:trees, lamps:lamps,
+                  parked:parked, walkers:walkers, manholes:manholes,
                   colX:colX, rowY:rowY };
     return map._view;
   }
@@ -5661,7 +5730,28 @@ var CityView = (function(){
     });
   }
 
-  return { build:build, railBed:railBed, bikePaths:bikePaths, KERB:KERB, WALK:WALK, rng:rng };
+  /* where a pavement walker is at time t: to and fro along their stretch */
+  function walkerAt(wk, t){
+    var len = wk.b - wk.a, u = (t*wk.speed/len + wk.phase*2) % 2;
+    var back = u > 1, f = back ? 2 - u : u;
+    var along = wk.a + f*len, lat = wk.side*wk.off + (back ? -1 : 1)*wk.side*3;
+    var x = wk.col ? wk.line + lat : along, y = wk.col ? along : wk.line + lat;
+    var dir = back ? -1 : 1;
+    return { x:x, y:y, h: wk.col ? (dir > 0 ? Math.PI/2 : -Math.PI/2) : (dir > 0 ? 0 : Math.PI) };
+  }
+  /* is (x, y) inside a parked car (with a margin)? returns it, or null */
+  function parkedAt(map, x, y, margin){
+    var v = build(map), m = margin || 0;
+    for (var i = 0; i < v.parked.length; i++){
+      var pc = v.parked[i];
+      var hx = (pc.col ? CFG.CAR_W : CFG.CAR_L)/2 + m, hy = (pc.col ? CFG.CAR_L : CFG.CAR_W)/2 + m;
+      if (Math.abs(x - pc.x) < hx && Math.abs(y - pc.y) < hy) return pc;
+    }
+    return null;
+  }
+
+  return { build:build, railBed:railBed, bikePaths:bikePaths, walkerAt:walkerAt, parkedAt:parkedAt,
+           KERB:KERB, WALK:WALK, rng:rng };
 })();
 
 /* ---------- js/render.js ---------- */
@@ -5815,6 +5905,17 @@ var Render = (function(){
         }
         ctx.stroke();
       }
+    });
+    /* cars parked along the quiet streets */
+    (view.parked || []).forEach(function(pc){
+      var w = pc.col ? CFG.CAR_W : CFG.CAR_L, h = pc.col ? CFG.CAR_L : CFG.CAR_W;
+      ctx.fillStyle = COL.shadow;
+      ctx.fillRect(pc.x - w/2 + 2, pc.y - h/2 + 3, w, h);
+      ctx.fillStyle = pc.color;
+      ctx.fillRect(pc.x - w/2, pc.y - h/2, w, h);
+      ctx.fillStyle = 'rgba(20,28,38,0.6)';
+      if (pc.col) ctx.fillRect(pc.x - w/2 + 4, pc.y - h*0.2, w - 8, h*0.36);
+      else ctx.fillRect(pc.x - w*0.2, pc.y - h/2 + 4, w*0.36, h - 8);
     });
     view.trees.forEach(function(t){
       ctx.fillStyle = night ? 'rgba(36,54,31,0.9)' : 'rgba(86,122,69,0.92)';
@@ -7269,7 +7370,7 @@ var GL3D = (function(){
   var FOV_H = 78;                         // horizontal, degrees, as in pov.js
   var EYE_H = 1.20;
 
-  var ok = null, renderer = null, canvas = null;
+  var ok = null, renderer = null, canvas = null, clouds = null;
   var scene, camera, sun, hemi, sky, pmrem, envDay, envNight;
   var night = true;
   var tex = {}, texReady = {};
@@ -7331,6 +7432,27 @@ var GL3D = (function(){
     headlamp = new THREE.SpotLight(0xfff4dd, 0, 70, 0.5, 0.45, 1.6);
     scene.add(headlamp); scene.add(headlamp.target);
 
+    /* fair-weather clouds, far off, drifting with the car like the sky */
+    clouds = new THREE.Group();
+    var cc = document.createElement('canvas'); cc.width = 256; cc.height = 128;
+    var cg = cc.getContext('2d');
+    for (var b = 0; b < 14; b++){
+      var bx = 40 + Math.random()*176, by = 50 + Math.random()*40, br = 18 + Math.random()*30;
+      var gr = cg.createRadialGradient(bx, by, 0, bx, by, br);
+      gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      cg.fillStyle = gr; cg.fillRect(0, 0, 256, 128);
+    }
+    var ctx2 = new THREE.CanvasTexture(cc); ctx2.encoding = THREE.sRGBEncoding;
+    var cmat = new THREE.SpriteMaterial({ map:ctx2, transparent:true, depthWrite:false, fog:false, opacity:0.85 });
+    for (var k = 0; k < 16; k++){
+      var sp = new THREE.Sprite(cmat);
+      var a = k/16*Math.PI*2 + Math.random()*0.3, d = 900 + Math.random()*500;
+      sp.position.set(Math.cos(a)*d, 160 + Math.random()*180, Math.sin(a)*d);
+      sp.scale.set(360 + Math.random()*260, 120 + Math.random()*70, 1);
+      clouds.add(sp);
+    }
+    scene.add(clouds);
+
     loadTextures();
     syncTheme();
     ok = true;
@@ -7363,6 +7485,10 @@ var GL3D = (function(){
     MAT = {
       asphalt: std({ color:0x9a9a9a, roughness:0.92 }),
       cycle:   std({ color:0xc2604a, roughness:0.9 }),          // red cycle-path asphalt
+      manhole: std({ color:0x2e2d2b, metalness:0.6, roughness:0.55 }),
+      hedge:   std({ color:0x4f6e3c, roughness:1.0 }),
+      balc:    std({ color:0xd8d4cc, roughness:0.85 }),
+      railing: std({ color:0x2c2f33, metalness:0.5, roughness:0.5 }),
       pavers:  std({ color:0xcfcac2, roughness:0.9 }),
       gravel:  std({ color:0xb8b0a4, roughness:1.0 }),
       grass:   std({ color:0xa8b890, roughness:1.0 }),
@@ -7396,7 +7522,8 @@ var GL3D = (function(){
   var TILE = { asphalt:5, pavers:2.4, gravel:3, grass:4, field:6 };
   function applyTextures(){
     var M = mats();
-    [['asphalt','asphalt'], ['cycle','asphalt'], ['pavers','pavers'], ['gravel','gravel'], ['grass','grass'], ['field','grass'], ['kerb','pavers']]
+    [['asphalt','asphalt'], ['cycle','asphalt'], ['pavers','pavers'], ['gravel','gravel'], ['grass','grass'], ['field','grass'], ['kerb','pavers'],
+     ['hedge','grass'], ['balc','plaster']]
       .forEach(function(p){
         var d = tex[p[1] + '_diff'], n = tex[p[1] + '_nor'];
         if (d && M[p[0]].map !== d){ M[p[0]].map = d; M[p[0]].needsUpdate = true; }
@@ -7902,6 +8029,7 @@ var GL3D = (function(){
       ground:new Builder(), yard:new Builder(), bed:new Builder(), road:new Builder(), kerb:new Builder(),
       paint:new Builder(), pave:new Builder(), island:new Builder(),
       bike:new Builder(), bikeX:new Builder(),
+      hedge:new Builder(), balc:new Builder(), rail:new Builder(),
       wallA:new Builder(), wallB:new Builder(), shop:new Builder(), home:new Builder(),
       gable:new Builder(), roof:new Builder(), eaves:new Builder()
     };
@@ -7918,6 +8046,8 @@ var GL3D = (function(){
       map.nodes.forEach(function(n){ buildJunction(P, n, S/2 + 2, true); });
       buildBikePaths(P, map);
       buildHouses(P, view.houses);
+      buildStreetBits(P, group, view);
+      buildParked(group, view);
       buildTrees(group, view.trees);
       lampPos = buildLamps(group, view.lamps);
       if (bed) buildRails(group, map, bed, view);
@@ -7937,6 +8067,7 @@ var GL3D = (function(){
       ['ground', M.pavers], ['yard', world.map ? M.grass : M.field], ['bed', M.gravel], ['road', M.asphalt],
       ['kerb', M.kerb], ['paint', M.paint], ['pave', M.pavers], ['island', M.grass],
       ['bike', M.cycle], ['bikeX', M.cycle],
+      ['hedge', M.hedge, true], ['balc', M.balc, true], ['rail', M.railing],
       ['wallA', M.wallA, true], ['wallB', M.wallB, true], ['shop', M.shop, true], ['home', M.home, true],
       ['gable', M.gable, true], ['roof', M.roof, true], ['eaves', M.kerb, true]
     ];
@@ -8009,6 +8140,142 @@ var GL3D = (function(){
           });
         }
       });
+    });
+  }
+
+  /* ---------------- merging many copies into one mesh ---------------- */
+  /* A hundred parked cars as separate objects would be thousands of draw
+     calls; baked into one mesh per material they are a handful. */
+  function Merger(){ this.pos = []; this.nor = []; this.col = []; this.idx = []; }
+  Merger.prototype.add = function(geo, m4, color){
+    var p = geo.attributes.position, n = geo.attributes.normal, base = this.pos.length/3, i;
+    var nm = new THREE.Matrix3().getNormalMatrix(m4), v = new THREE.Vector3();
+    for (i = 0; i < p.count; i++){
+      v.fromBufferAttribute(p, i).applyMatrix4(m4); this.pos.push(v.x, v.y, v.z);
+      v.fromBufferAttribute(n, i).applyMatrix3(nm).normalize(); this.nor.push(v.x, v.y, v.z);
+      if (color) this.col.push(color.r, color.g, color.b);
+    }
+    if (geo.index){ for (i = 0; i < geo.index.count; i++) this.idx.push(base + geo.index.getX(i)); }
+    else for (i = 0; i < p.count; i++) this.idx.push(base + i);
+  };
+  Merger.prototype.mesh = function(mat, shadow){
+    if (!this.idx.length) return null;
+    var g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
+    if (this.col.length) g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    g.setIndex(this.idx.length > 65535 ? new THREE.Uint32BufferAttribute(this.idx, 1) : this.idx);
+    g.computeBoundingSphere();
+    var m = new THREE.Mesh(g, mat);
+    m.castShadow = !!shadow; m.receiveShadow = true; m.matrixAutoUpdate = false;
+    return m;
+  };
+
+  /* cars parked along the quiet streets, half up on the kerb */
+  function buildParked(group, view){
+    if (!view.parked.length) return;
+    var VMs = vehicleMats();
+    var paint = new Merger(), glass = new Merger(), tyres = new Merger(), rims = new Merger(), trim = new Merger(), tail = new Merger();
+    var m = new THREE.Matrix4(), part = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1,1,1), pv = new THREE.Vector3();
+    var col = new THREE.Color();
+    view.parked.forEach(function(pc){
+      var G = carGeometry(TYPE_NAMES[pc.type], CFG.CAR_L*U, CFG.CAR_W*U), T = G.T, L = G.L, W = G.W, h = L/2;
+      /* a little up on the kerb, the kerb side a touch higher */
+      m.compose(pv.set(pc.x*U, 0.03, pc.y*U), q.setFromAxisAngle(new THREE.Vector3(0,1,0), -pc.h), s);
+      col.set(pc.color);
+      function at(geo, x, y, z, into, c){ part.makeTranslation(x, y, z).premultiply(m); into.add(geo, part, c); }
+      at(G.body, 0, 0, 0, paint, col);
+      at(G.roof, 0, 0, 0, paint, col);
+      if (G.panel) at(G.panel, -L*0.19, (G.top + 1.14)/2, 0, paint, col);
+      at(G.cab, 0, 0, 0, glass);
+      [[L*0.31, 1], [L*0.31, -1], [-L*0.30, 1], [-L*0.30, -1]].forEach(function(w){
+        at(G.tyre, w[0], T.wheelR, w[1]*(W/2 - 0.1), tyres);
+        at(G.rim, w[0], T.wheelR, w[1]*(W/2 - 0.1) + w[1]*0.12, rims);
+      });
+      [L*0.31, -L*0.30].forEach(function(x){ at(G.liner, x, T.wheelR*2 + 0.04, 0, trim); });
+      at(G.bumper, h - 0.02, T.ride + 0.04, 0, trim);
+      at(G.bumper, -h + 0.02, T.ride + 0.04, 0, trim);
+      at(G.grille, h + 0.005, T.ride + 0.22, 0, trim);
+      if (T.sill) at(G.sill, 0, T.ride + 0.08, 0, trim);
+      [-1, 1].forEach(function(side){
+        at(G.lampRear, -h + 0.005, T.tailY, side*(W/2 - 0.28), tail);
+        at(G.mirror, T.cab[0][0]*L - 0.08, T.cab[0][1] + 0.08, side*(W/2 + 0.09), paint, col);
+      });
+    });
+    var parkedPaint = new THREE.MeshPhysicalMaterial({ vertexColors:true, metalness:0.45, roughness:0.34,
+                                                        clearcoat:1, clearcoatRoughness:0.08, envMapIntensity:0.8 });
+    parkedPaintMat = parkedPaint;
+    [[paint, parkedPaint, true], [glass, VMs.glass, true], [tyres, VMs.tyre, true], [rims, VMs.rim],
+     [trim, VMs.trim], [tail, VMs.tail]].forEach(function(p){
+      var mesh = p[0].mesh(p[1], p[2]);
+      if (mesh) group.add(mesh);
+    });
+  }
+  var parkedPaintMat = null;
+
+  /* front-garden hedges, balconies on the street side, manhole covers */
+  function buildStreetBits(P, group, view){
+    view.houses.forEach(function(hs){
+      if (hs.hedge){
+        var hd = hs.hedge;
+        P.hedge.box(hd.x0*U, hd.x1*U, 0, 0.95 + (hs.seed % 5)*0.06, hd.y0*U, hd.y1*U, 1.5);
+      }
+      if (!hs.balcony) return;
+      var x0 = hs.x0*U, x1 = hs.x1*U, z0 = hs.y0*U, z1 = hs.y1*U;
+      var alongX = hs.front === 'N' || hs.front === 'S';
+      var mid = alongX ? (x0 + x1)/2 : (z0 + z1)/2;
+      var wall = hs.front === 'N' ? z0 : hs.front === 'S' ? z1 : hs.front === 'W' ? x0 : x1;
+      var out = (hs.front === 'N' || hs.front === 'W') ? -1 : 1;
+      for (var f = 1; f < hs.floors; f++){
+        var y = f*FLOOR;
+        var a = wall, b = wall + out*1.25, lo = Math.min(a, b), hi = Math.max(a, b);
+        if (alongX){
+          P.balc.box(mid - 1.4, mid + 1.4, y - 0.15, y, lo, hi, 1);
+          P.rail.box(mid - 1.4, mid + 1.4, y, y + 1.0, out < 0 ? lo : hi - 0.05, out < 0 ? lo + 0.05 : hi, 1);
+          P.rail.box(mid - 1.4, mid - 1.35, y, y + 1.0, lo, hi, 1);
+          P.rail.box(mid + 1.35, mid + 1.4, y, y + 1.0, lo, hi, 1);
+        } else {
+          P.balc.box(lo, hi, y - 0.15, y, mid - 1.4, mid + 1.4, 1);
+          P.rail.box(out < 0 ? lo : hi - 0.05, out < 0 ? lo + 0.05 : hi, y, y + 1.0, mid - 1.4, mid + 1.4, 1);
+          P.rail.box(lo, hi, y, y + 1.0, mid - 1.4, mid - 1.35, 1);
+          P.rail.box(lo, hi, y, y + 1.0, mid + 1.35, mid + 1.4, 1);
+        }
+      }
+    });
+    if (view.manholes.length){
+      var mh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.34, 0.34, 0.02, 20), mats().manhole, view.manholes.length);
+      var mm = new THREE.Matrix4();
+      view.manholes.forEach(function(p, i){ mm.makeTranslation(p.x*U, 0.036, p.y*U); mh.setMatrixAt(i, mm); });
+      mh.receiveShadow = true;
+      group.add(mh);
+    }
+  }
+
+  /* ---------------- people on the pavements ---------------- */
+  /* each walker keeps their own figure; only the nearest few are drawn */
+  var walkerShown = [], walkerAll = [], walkerTown = null;
+  function syncWalkers(world){
+    walkerShown.forEach(function(g){ g.visible = false; });
+    walkerShown = [];
+    if (!world.map) return;
+    var view = CityView.build(world.map), p = world.player, t = world.t;
+    if (walkerTown !== view){                       // a new drive: clear out the last town's people
+      walkerAll.forEach(function(g){ scene.remove(g); });
+      walkerAll = []; walkerTown = view;
+    }
+    var near = view.walkers.map(function(wk){
+      var at = CityView.walkerAt(wk, t);
+      return { wk:wk, at:at, d:Math.hypot(at.x - p.pos.x, at.y - p.pos.y) };
+    }).filter(function(o){ return o.d < 150*CFG.PPM; })
+      .sort(function(a, b){ return a.d - b.d; }).slice(0, 28);
+    near.forEach(function(o){
+      var g = o.wk._mesh;
+      if (!g || g.parent !== scene){ g = o.wk._mesh = buildPerson(o.wk.look, false); scene.add(g); walkerAll.push(g); }
+      g.visible = true;
+      g.position.set(o.at.x*U, 0.02, o.at.y*U);
+      g.rotation.y = -o.at.h;
+      swing(g, 0.42, t);
+      walkerShown.push(g);
     });
   }
 
@@ -8116,6 +8383,7 @@ var GL3D = (function(){
       trim:   new THREE.MeshStandardMaterial({ color:0x15171a, roughness:0.55 }),
       chrome: new THREE.MeshStandardMaterial({ color:0xdadde2, metalness:1, roughness:0.15 }),
       head:   new THREE.MeshStandardMaterial({ color:0xf6f3ea, emissive:0xfff3d2, emissiveIntensity:0.15, roughness:0.1 }),
+      drl:    new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xf4f8ff, emissiveIntensity:1.6 }),
       tail:   new THREE.MeshStandardMaterial({ color:0x5a0a06, emissive:0xff2410, emissiveIntensity:0.25, roughness:0.2 }),
       brake:  new THREE.MeshStandardMaterial({ color:0xff3020, emissive:0xff2410, emissiveIntensity:3.0 }),
       blink:  new THREE.MeshStandardMaterial({ color:0xffa200, emissive:0xffa200, emissiveIntensity:3.0 }),
@@ -8165,82 +8433,141 @@ var GL3D = (function(){
     g.computeVertexNormals();
     return g;
   }
+  /* ---------------- car bodies ---------------- */
+  /* Five shapes you see on any German street: hatchback (a Golf), saloon,
+     estate (a Passat Variant), SUV and a small van. Each is a side profile
+     - x in fractions of the length from its middle, y in metres - drawn
+     through and then rounded, and a glasshouse on top. */
+  var CAR_TYPES = {
+    hatch: { len:0.93, ride:0.28, wheelR:0.32, lampY:0.66, tailY:0.82, glassW:0.84,
+      body:[[-.48,.28],[.47,.28],[.5,.42],[.5,.62],[.44,.80],[.22,.92],[-.44,.98],[-.5,.96],[-.5,.45]],
+      cab: [[.23,.90],[.13,1.24],[.05,1.44],[-.36,1.46],[-.47,1.25],[-.49,.97]],
+      roof:[.065, -.37] },
+    sedan: { len:1.0, ride:0.28, wheelR:0.33, lampY:0.64, tailY:0.74, glassW:0.84,
+      body:[[-.48,.28],[.47,.28],[.5,.42],[.5,.62],[.43,.80],[.21,.92],[-.41,.97],[-.5,.90],[-.5,.45]],
+      cab: [[.22,.90],[.12,1.22],[.05,1.40],[-.27,1.43],[-.38,1.30],[-.44,.96]],
+      roof:[.065, -.28] },
+    estate: { len:1.05, ride:0.28, wheelR:0.33, lampY:0.64, tailY:0.82, glassW:0.84,
+      body:[[-.48,.28],[.47,.28],[.5,.42],[.5,.62],[.43,.80],[.21,.92],[-.46,.98],[-.5,.95],[-.5,.45]],
+      cab: [[.22,.90],[.12,1.22],[.05,1.41],[-.42,1.43],[-.48,1.30],[-.49,.97]],
+      roof:[.065, -.43] },
+    suv: { len:1.03, ride:0.38, wheelR:0.37, lampY:0.84, tailY:0.98, glassW:0.84,
+      body:[[-.48,.38],[.46,.38],[.5,.55],[.5,.82],[.43,.98],[.20,1.08],[-.45,1.12],[-.5,1.08],[-.5,.55]],
+      cab: [[.21,1.06],[.10,1.42],[.03,1.66],[-.41,1.68],[-.47,1.45],[-.49,1.12]],
+      roof:[.045, -.42], sill:true },
+    van: { len:1.12, ride:0.34, wheelR:0.36, lampY:0.76, tailY:0.95, glassW:0.9,
+      body:[[-.48,.34],[.47,.34],[.5,.50],[.5,.78],[.45,.98],[.34,1.06],[-.49,1.10],[-.5,1.05],[-.5,.50]],
+      cab: [[.35,1.04],[.26,1.60],[.22,1.90],[-.49,1.92],[-.50,1.10]],
+      roof:[.23, -.49], panel:true }
+  };
+  var TYPE_NAMES = ['hatch', 'sedan', 'estate', 'suv', 'van'];
+  function typeFor(v){
+    if (v.isPlayer || v.taxi || v.emergency) return 'sedan';
+    var n = 0, id = String(v.id);
+    for (var i = 0; i < id.length; i++) n = (n*31 + id.charCodeAt(i)) >>> 0;
+    return TYPE_NAMES[[0,0,0,1,1,2,2,3,3,4][n % 10]];     // plenty of hatchbacks, fewer vans
+  }
+  function profileShape(pts, L){
+    var sm = Geo.smooth(pts.concat([pts[0]]).map(function(p){ return { x:p[0]*L, y:p[1] }; }), 2);
+    var s = new THREE.Shape();
+    sm.forEach(function(p, i){ if (i) s.lineTo(p.x, p.y); else s.moveTo(p.x, p.y); });
+    return s;
+  }
+  /* the body's side profile with its sill cut up round both wheels, so
+     the tyres show in their arches as on a real car */
+  function bodyWithArches(T, L){
+    var R = T.wheelR + 0.05, out = [T.body[0]];
+    [-0.30, 0.31].forEach(function(xf){
+      var xc = xf*L;
+      for (var k = 0; k <= 10; k++){
+        var x = xc - R + 2*R*k/10;
+        var y = Math.max(T.ride, T.wheelR + Math.sqrt(Math.max(0, R*R - (x - xc)*(x - xc))));
+        out.push([x/L, y]);
+      }
+    });
+    return out.concat(T.body.slice(1));
+  }
   var carGeo = {};
+  function carGeometry(type, L0, W){
+    var T = CAR_TYPES[type], L = L0*T.len, key = type + L.toFixed(2) + 'x' + W.toFixed(2);
+    if (carGeo[key]) return carGeo[key];
+    var cab = T.cab, top = cab.reduce(function(m, p){ return Math.max(m, p[1]); }, 0);
+    var rf = T.roof;
+    var roof = new THREE.Shape();
+    roof.moveTo(rf[0]*L, top - 0.03); roof.lineTo(rf[1]*L, top - 0.01);
+    roof.lineTo(rf[1]*L, top + 0.045); roof.lineTo((rf[0] - 0.005)*L, top + 0.025);
+    var G = {
+      T:T, L:L, W:W, top:top,
+      body: extrudeSide(profileShape(bodyWithArches(T, L), L), W, 0.09),
+      cab:  extrudeSide(profileShape(T.cab, L), W*T.glassW, 0.1),
+      roof: extrudeSide(roof, W*(T.glassW - 0.04), 0.04),
+      tyre: new THREE.CylinderGeometry(T.wheelR, T.wheelR, 0.24, 24).rotateX(Math.PI/2),
+      rim:  new THREE.CylinderGeometry(T.wheelR*0.62, T.wheelR*0.62, 0.03, 20).rotateX(Math.PI/2),
+      spoke: new THREE.BoxGeometry(T.wheelR*1.1, 0.045, 0.02),
+      hub:  new THREE.CylinderGeometry(0.05, 0.05, 0.05, 10).rotateX(Math.PI/2),
+      liner: new THREE.BoxGeometry((T.wheelR + 0.05)*2, 0.02, W - 0.16),
+      pillar: new THREE.BoxGeometry(0.12, (top - T.body[6][1])*0.95, W*(T.glassW + 0.005)),
+      lamp: new THREE.BoxGeometry(0.05, 0.10, 0.38),
+      drl:  new THREE.BoxGeometry(0.04, 0.02, 0.34),
+      lampRear: new THREE.BoxGeometry(0.05, 0.11, 0.40),
+      blinker: new THREE.BoxGeometry(0.05, 0.07, 0.12),
+      plate: new THREE.PlaneGeometry(0.52, 0.115),
+      grille: new THREE.BoxGeometry(0.05, 0.14, W*0.46),
+      bumper: new THREE.BoxGeometry(0.1, 0.13, W*0.94),
+      sill: new THREE.BoxGeometry(L*0.62, 0.14, W + 0.04),
+      mirror: new THREE.BoxGeometry(0.16, 0.11, 0.22),
+      mirrorGlass: new THREE.PlaneGeometry(0.15, 0.09),
+      panel: T.panel ? new THREE.BoxGeometry(L*0.60, top - 1.14, W*T.glassW + 0.03) : null
+    };
+    return (carGeo[key] = G);
+  }
   /* a car, facing +x, wheels on y = 0, width along z (+z is its right) */
   function buildCar(v){
-    var L = v.len*U, W = v.wid*U, h = L/2;
-    var key = L.toFixed(2) + 'x' + W.toFixed(2);
-    var G = carGeo[key];
-    if (!G){
-      var body = new THREE.Shape();
-      body.moveTo(-h + 0.08, 0.28);
-      body.lineTo(h - 0.16, 0.28);
-      body.quadraticCurveTo(h, 0.28, h, 0.44);
-      body.lineTo(h, 0.60);
-      body.quadraticCurveTo(h - 0.03, 0.76, h - 0.30, 0.80);
-      body.lineTo(L*0.21, 0.92);
-      body.lineTo(-L*0.41, 0.97);
-      body.quadraticCurveTo(-h + 0.02, 0.96, -h, 0.84);
-      body.lineTo(-h, 0.44);
-      body.quadraticCurveTo(-h, 0.28, -h + 0.08, 0.28);
-      /* the glasshouse: windscreen from the scuttle up to the roof, which
-         runs back to a sloping rear window - proportions of a family car,
-         with the driver's eyes about a metre behind the windscreen base */
-      var cab = new THREE.Shape();
-      cab.moveTo(L*0.22, 0.90);
-      cab.quadraticCurveTo(L*0.12, 1.22, L*0.05, 1.40);
-      cab.lineTo(-L*0.27, 1.43);
-      cab.quadraticCurveTo(-L*0.38, 1.30, -L*0.44, 0.96);
-      cab.lineTo(L*0.22, 0.90);
-      var roof = new THREE.Shape();
-      roof.moveTo(L*0.065, 1.39); roof.lineTo(-L*0.28, 1.42);
-      roof.lineTo(-L*0.28, 1.475); roof.lineTo(L*0.06, 1.445); roof.lineTo(L*0.065, 1.39);
-      G = carGeo[key] = {
-        body: extrudeSide(body, W, 0.09),
-        cab:  extrudeSide(cab, W*0.84, 0.1),
-        roof: extrudeSide(roof, W*0.80, 0.04),
-        tyre: new THREE.CylinderGeometry(0.33, 0.33, 0.24, 22).rotateX(Math.PI/2),
-        rim:  new THREE.CylinderGeometry(0.21, 0.21, 0.02, 16).rotateX(Math.PI/2),
-        pillar: new THREE.BoxGeometry(0.12, 0.48, W*0.845),
-        lamp: new THREE.BoxGeometry(0.05, 0.11, 0.36),
-        lampRear: new THREE.BoxGeometry(0.05, 0.12, 0.40),
-        blinker: new THREE.BoxGeometry(0.05, 0.07, 0.12),
-        plate: new THREE.PlaneGeometry(0.52, 0.115),
-        grille: new THREE.BoxGeometry(0.05, 0.15, W*0.46),
-        bumper: new THREE.BoxGeometry(0.1, 0.12, W*0.92),
-        mirror: new THREE.BoxGeometry(0.14, 0.1, 0.2)
-      };
-    }
+    var G = carGeometry(typeFor(v), v.len*U, v.wid*U), T = G.T, L = G.L, W = G.W, h = L/2;
     var VMs = vehicleMats();
     var paint = v.isPlayer ? ownPaint() : paintMat(v.taxi ? '#efe6c8' : v.color);
     var g = new THREE.Group();
     part(G.body, paint, 0, 0, 0, g, true);
     g.userData.cab = part(G.cab, VMs.glass, 0, 0, 0, g, true);
     g.userData.roofPanel = part(G.roof, paint, 0, 0, 0, g, true);
-    g.userData.pillar = part(G.pillar, paint, -L*0.11, 1.17, 0, g, false);
-    part(G.grille, VMs.trim, h + 0.005, 0.50, 0, g);
-    part(G.bumper, VMs.trim, h - 0.02, 0.32, 0, g);
-    part(G.bumper, VMs.trim, -h + 0.02, 0.32, 0, g);
+    g.userData.pillar = part(G.pillar, paint, (T.roof[0] + T.roof[1])*0.42*L, (G.top + T.body[6][1])/2, 0, g, false);
+    if (G.panel) part(G.panel, paint, -L*0.19, (G.top + 1.14)/2, 0, g, true);          // a panel van's blind sides
+    if (T.sill) part(G.sill, VMs.trim, 0, T.ride + 0.08, 0, g);
+    part(G.grille, VMs.trim, h + 0.005, T.ride + 0.22, 0, g);
+    part(G.bumper, VMs.trim, h - 0.02, T.ride + 0.04, 0, g);
+    part(G.bumper, VMs.trim, -h + 0.02, T.ride + 0.04, 0, g);
+    var mirX = T.cab[0][0]*L - 0.08, mirY = T.cab[0][1] + 0.08;
     [-1, 1].forEach(function(side){
-      part(G.mirror, paint, L*0.15, 0.98, side*(W/2 + 0.08), g);
+      part(G.mirror, paint, mirX, mirY, side*(W/2 + 0.09), g);
+      var mg = part(G.mirrorGlass, VMs.glass, mirX - 0.081, mirY, side*(W/2 + 0.09), g);
+      mg.rotation.y = -Math.PI/2;
     });
     g.userData.wheels = [];
     [[L*0.31, 1], [L*0.31, -1], [-L*0.30, 1], [-L*0.30, -1]].forEach(function(w){
-      var wg = new THREE.Group(); wg.position.set(w[0], 0.33, w[1]*(W/2 - 0.12));
+      var wg = new THREE.Group(); wg.position.set(w[0], T.wheelR, w[1]*(W/2 - 0.1));
       var t = new THREE.Mesh(G.tyre, VMs.tyre); t.castShadow = true; wg.add(t);
       var r = new THREE.Mesh(G.rim, VMs.rim); r.position.z = w[1]*0.12; wg.add(r);
+      for (var k = 0; k < 5; k++){
+        var sp = new THREE.Mesh(G.spoke, VMs.rim);
+        sp.position.z = w[1]*0.135; sp.rotation.z = k*Math.PI/5;
+        wg.add(sp);
+      }
+      var hb = new THREE.Mesh(G.hub, VMs.trim); hb.position.z = w[1]*0.14; wg.add(hb);
       g.add(wg); g.userData.wheels.push(wg);
     });
+    /* dark liners in the arches, so you never see through the car */
+    [L*0.31, -L*0.30].forEach(function(x){ part(G.liner, VMs.trim, x, T.wheelR*2 + 0.04, 0, g); });
     [-1, 1].forEach(function(side){
-      part(G.lamp, VMs.head, h - 0.01, 0.64, side*(W/2 - 0.30), g);
-      part(G.lampRear, VMs.tail, -h + 0.005, 0.72, side*(W/2 - 0.28), g);
+      part(G.lamp, VMs.head, h - 0.01, T.lampY, side*(W/2 - 0.30), g);
+      part(G.drl, VMs.drl, h - 0.005, T.lampY - 0.07, side*(W/2 - 0.30), g);
+      part(G.lampRear, VMs.tail, -h + 0.005, T.tailY, side*(W/2 - 0.28), g);
     });
     /* brake lights and indicators: separate lit copies, shown when on */
     g.userData.brake = [-1, 1].map(function(side){
-      var m = part(G.lampRear, VMs.brake, -h - 0.004, 0.72, side*(W/2 - 0.28), g); m.visible = false; return m;
+      var m = part(G.lampRear, VMs.brake, -h - 0.004, T.tailY, side*(W/2 - 0.28), g); m.visible = false; return m;
     });
     g.userData.blink = { left:[], right:[] };
-    [[h - 0.005, 0.64], [-h + 0.0, 0.84]].forEach(function(pos){
+    [[h - 0.005, T.lampY], [-h + 0.0, T.tailY + 0.1]].forEach(function(pos){
       [-1, 1].forEach(function(side){
         var m = part(G.blinker, VMs.blink, pos[0] + (pos[0] > 0 ? 0.01 : -0.012), pos[1], side*(W/2 - 0.1), g);
         m.visible = false;
@@ -8248,8 +8575,8 @@ var GL3D = (function(){
       });
     });
     var pm = plateMat(plateText(String(v.id)));
-    var pf = part(G.plate, pm, h + 0.06, 0.42, 0, g); pf.rotation.y = Math.PI/2;
-    var pr = part(G.plate, pm, -h - 0.02, 0.50, 0, g); pr.rotation.y = -Math.PI/2;
+    var pf = part(G.plate, pm, h + 0.06, T.ride + 0.14, 0, g); pf.rotation.y = Math.PI/2;
+    var pr = part(G.plate, pm, -h - 0.02, T.ride + 0.22, 0, g); pr.rotation.y = -Math.PI/2;
     if (v.taxi){
       var c = document.createElement('canvas'); c.width = 128; c.height = 40;
       var cg = c.getContext('2d'); cg.fillStyle = '#ffe36b'; cg.fillRect(0, 0, 128, 40);
@@ -8340,7 +8667,17 @@ var GL3D = (function(){
     /* the dashboard: a low shelf under the windscreen, a cowl over the
        instruments in front of the driver */
     part(new THREE.BoxGeometry(0.50, 0.16, W - 0.12), VMs.dash, L*0.18, 0.84, 0, car);
-    part(new THREE.BoxGeometry(0.26, 0.09, 0.5), VMs.dash, L*0.11, 0.97, -W*0.20, car);
+    part(new THREE.BoxGeometry(0.26, 0.17, 0.54), VMs.dash, L*0.11, 0.985, -W*0.20, car);
+    /* the instrument cluster in its cowl: a live speedometer and the
+       indicator arrows, drawn into a small canvas every frame */
+    var cc = document.createElement('canvas'); cc.width = 512; cc.height = 160;
+    var ctex = new THREE.CanvasTexture(cc); ctex.encoding = THREE.sRGBEncoding;
+    var cluster = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.14),
+      new THREE.MeshBasicMaterial({ map:ctex, toneMapped:false }));
+    cluster.position.set(L*0.11 - 0.14, 0.99, -W*0.20);
+    cluster.rotation.y = -Math.PI/2;
+    car.add(cluster);
+    car.userData.cluster = { canvas:cc, ctx:cc.getContext('2d'), tex:ctex, last:'' };
     /* A-pillars along the windscreen edges, roof lining above */
     [-1, 1].forEach(function(side){
       var a = new THREE.Vector3(L*0.22, 0.92, side*(W*0.42)), b = new THREE.Vector3(L*0.05, 1.40, side*(W*0.38));
@@ -8370,6 +8707,44 @@ var GL3D = (function(){
     car.userData.steeringWheel = wheel;
   }
 
+  /* the cluster: a round speedometer (0-200), the speed in figures, the
+     green arrows when an indicator is on, lit softly at night */
+  function drawCluster(cl, kmh, indicator, blink){
+    var key = Math.round(kmh) + indicator + blink + night;
+    if (key === cl.last) return;
+    cl.last = key;
+    var g = cl.ctx, w = cl.canvas.width, h = cl.canvas.height;
+    g.fillStyle = '#07090b'; g.fillRect(0, 0, w, h);
+    var cx = w*0.5, cy = h*0.92, r = h*0.8;
+    var ink = night ? '#ffb46a' : '#e8edf2';
+    g.strokeStyle = ink; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, r, Math.PI*1.1, Math.PI*1.9); g.stroke();
+    g.fillStyle = ink; g.font = 'bold 18px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (var s = 0; s <= 200; s += 20){
+      var a = Math.PI*1.1 + (s/200)*Math.PI*0.8;
+      var x0 = cx + Math.cos(a)*r, y0 = cy + Math.sin(a)*r;
+      var x1 = cx + Math.cos(a)*(r - (s % 40 ? 10 : 18)), y1 = cy + Math.sin(a)*(r - (s % 40 ? 10 : 18));
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+      if (s % 40 === 0) g.fillText(String(s), cx + Math.cos(a)*(r - 34), cy + Math.sin(a)*(r - 34));
+    }
+    var an = Math.PI*1.1 + (Math.min(kmh, 200)/200)*Math.PI*0.8;
+    g.strokeStyle = '#ff3b2f'; g.lineWidth = 5;
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(an)*(r - 8), cy + Math.sin(an)*(r - 8)); g.stroke();
+    g.fillStyle = ink; g.font = 'bold 34px Arial';
+    g.fillText(Math.round(kmh) + '', cx, cy - r*0.42);
+    g.font = '14px Arial'; g.fillText('km/h', cx, cy - r*0.2);
+    /* indicator arrows */
+    [['left', w*0.12, -1], ['right', w*0.88, 1]].forEach(function(ar){
+      var on = indicator === ar[0] && blink;
+      g.fillStyle = on ? '#2bff6a' : '#16301d';
+      g.beginPath();
+      g.moveTo(ar[1] + ar[2]*30, h*0.45); g.lineTo(ar[1], h*0.25); g.lineTo(ar[1], h*0.37);
+      g.lineTo(ar[1] - ar[2]*26, h*0.37); g.lineTo(ar[1] - ar[2]*26, h*0.53); g.lineTo(ar[1], h*0.53);
+      g.lineTo(ar[1], h*0.65); g.closePath(); g.fill();
+    });
+    cl.tex.needsUpdate = true;
+  }
+
   function vehicleMesh(v){
     var key = v.id + '|' + v.kind + '|' + (v.taxi ? 't' : v.color);
     var cur = dyn.meshes[v.id];
@@ -8397,6 +8772,7 @@ var GL3D = (function(){
         if (k < 2 && v.kind !== 'bike') w.rotation.y = -(v.delta || 0);
       });
       if (g.userData.steeringWheel) g.userData.steeringWheel.rotation.z = -(v.delta || 0) * 14;
+      if (g.userData.cluster) drawCluster(g.userData.cluster, v.v*3.6/CFG.PPM, v.indicator, (t*2.2) % 1 < 0.55);
       /* a cyclist pedals while moving */
       if (g.userData.rider){
         var ph = v.s*U*1.6;
@@ -8626,6 +9002,8 @@ var GL3D = (function(){
       renderer.toneMappingExposure = 1.05;
       scene.environment = envDay;
       Object.keys(paintMats).forEach(function(k){ paintMats[k].envMapIntensity = 0.12; });
+      if (parkedPaintMat) parkedPaintMat.envMapIntensity = 0.12;
+      if (clouds) clouds.visible = false;
     } else {
       sky.visible = true;
       scene.background = null;
@@ -8635,6 +9013,8 @@ var GL3D = (function(){
       renderer.toneMappingExposure = 0.95;
       scene.environment = envDay;
       Object.keys(paintMats).forEach(function(k){ paintMats[k].envMapIntensity = 0.8; });
+      if (parkedPaintMat) parkedPaintMat.envMapIntensity = 0.8;
+      if (clouds) clouds.visible = true;
     }
     var el = THREE.MathUtils.degToRad(night ? 20 : 38), az = THREE.MathUtils.degToRad(215);
     sunDir.setFromSphericalCoords(1, Math.PI/2 - el, az);
@@ -8702,7 +9082,9 @@ var GL3D = (function(){
     var ex = p.pos.x + c*back + s*(p.wid*0.20);
     var ey = p.pos.y + s*back - c*(p.wid*0.20);
     camera.position.set(ex*U, EYE_H, ey*U);
-    camera.rotation.set(-0.035, -(p.pos.h + (yaw || 0)) - Math.PI/2, 0);
+    /* eyes a little down the road, as a driver sits: enough to see the
+       instruments through the wheel on a wide screen */
+    camera.rotation.set(-0.085, -(p.pos.h + (yaw || 0)) - Math.PI/2, 0);
     var aspect = w / Math.max(1, h);
     var vfov = 2*Math.atan(Math.tan(FOV_H*Math.PI/360) / aspect) * 180/Math.PI;
     /* about what you see from a real driver's seat; on a tall screen the
@@ -8713,13 +9095,15 @@ var GL3D = (function(){
 
     syncVehicles(world, world.t);
     syncPeds(world);
+    syncWalkers(world);
     syncSignals(world);
     syncChevrons(world);
     syncNightLights(world);
     built.stations.forEach(function(st){ st.rotation.y = Math.atan2(camera.position.x - st.position.x, camera.position.z - st.position.z); });
 
-    /* the sun's shadow box follows the car */
+    /* the sun's shadow box follows the car, and so does the sky */
     var cx = p.pos.x*U, cz = p.pos.y*U;
+    if (clouds) clouds.position.set(cx, 0, cz);
     sun.target.position.set(cx + c*25, 0, cz + s*25);
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 150);
     /* our own headlights after dark */
@@ -8788,10 +9172,10 @@ var GL3D = (function(){
   var EXAM_BRIEF = {
     task: { de:'Die Prüfungsfahrt dauert ' + EXAM_MINUTES + ' Minuten. Der Prüfer sagt dir, wo es langgeht. ' +
                 'Es gibt keine Hinweise und kein Zurückspulen. Kleine Fehler werden notiert; ein schwerer ' +
-                'Fehler beendet die Prüfung sofort. Vor jedem Abbiegen: Spiegel (M), Blinker, Schulterblick (Q/E).',
+                'Fehler beendet die Prüfung sofort. Vor jedem Abbiegen: Spiegel (M), Blinker (Q/E), Schulterblick (←/→).',
             en:'The test drive lasts ' + EXAM_MINUTES + ' minutes. The examiner tells you where to go. ' +
                'No hints, no rewinding. Small faults are noted; one serious fault ends the test at once. ' +
-               'Before every turn: mirror (M), indicator, shoulder check (Q/E).' },
+               'Before every turn: mirror (M), indicator (Q/E), shoulder check (←/→).' },
     merk: { de:'Nicht bestanden bei einem schweren Fehler, bei fünf kleinen, oder wenn derselbe kleine dreimal passiert.',
             en:'You fail on one serious fault, on five small ones, or on the same small one three times.' }
   };
@@ -8864,8 +9248,8 @@ var GL3D = (function(){
     /* the keyboard legend in the briefing */
     var keys = el('brief-keys');
     clear(keys);
-    [['W', 'keys.throttle'], ['S', 'keys.brake'], ['Q E', 'keys.look'],
-     ['A D', 'keys.indicators'], ['V', 'keys.view'], ['H', 'keys.hints']]
+    [['W', 'keys.throttle'], ['S', 'keys.brake'], ['A D', 'keys.steer'], ['Q E', 'keys.indicators'],
+     ['← →', 'keys.look'], ['M', 'keys.mirror'], ['V', 'keys.view'], ['H', 'keys.hints']]
     .forEach(function(k){
       var sp = make('span');
       k[0].split(' ').forEach(function(key){ sp.appendChild(make('kbd', null, key)); });
@@ -9569,16 +9953,16 @@ var GL3D = (function(){
     if (e.repeat && k === ' ' && state.world && state.world.hold) return;
     if (k === 'w' || k === 'arrowup')   { input.throttle = true; el('pedal-gas').classList.add('down'); }
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = true; el('pedal-brake').classList.add('down'); }
-    /* the arrows steer when you drive yourself; Q / E always turn your head */
-    var steer = steeringByHand();
-    if (k === 'q' || (k === 'arrowleft' && !steer))  look.left = true;
-    if (k === 'e' || (k === 'arrowright' && !steer)) look.right = true;
-    if (k === 'arrowleft' && steer)  wheelKeys.left = true;
-    if (k === 'arrowright' && steer) wheelKeys.right = true;
+    /* A / D steer, as in any driving game; Q / E are the indicator stalk;
+       the arrow keys turn your head (shoulder check) */
+    if (k === 'a') wheelKeys.left = true;
+    if (k === 'd') wheelKeys.right = true;
+    if (k === 'arrowleft')  look.left = true;
+    if (k === 'arrowright') look.right = true;
     if (k === 'l'){ toggleSteer(); return; }
     if (k === 'm') look.mirror = true;
-    if (k === 'a') setIndicator('left');
-    if (k === 'd') setIndicator('right');
+    if (k === 'q' && !e.repeat) setIndicator('left');
+    if (k === 'e' && !e.repeat) setIndicator('right');
     if (k === 'x') input.indicator = 'off';
     if (k === 'r'){ if (state.mode === 'drive') startDrive(); else startScenario(state.scIndex); }
   });
@@ -9586,10 +9970,10 @@ var GL3D = (function(){
     var k = e.key.toLowerCase();
     if (k === 'w' || k === 'arrowup')   { input.throttle = false; el('pedal-gas').classList.remove('down'); }
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = false; el('pedal-brake').classList.remove('down'); }
-    if (k === 'q' || k === 'arrowleft')  look.left = false;
-    if (k === 'e' || k === 'arrowright') look.right = false;
-    if (k === 'arrowleft')  wheelKeys.left = false;
-    if (k === 'arrowright') wheelKeys.right = false;
+    if (k === 'arrowleft')  look.left = false;
+    if (k === 'arrowright') look.right = false;
+    if (k === 'a') wheelKeys.left = false;
+    if (k === 'd') wheelKeys.right = false;
     if (k === 'm') look.mirror = false;
   });
   window.addEventListener('blur', function(){
@@ -9626,7 +10010,9 @@ var GL3D = (function(){
   function initDragLook(){
     canvas.addEventListener('pointerdown', function(e){
       if (state.screen !== 'play') return;
-      if (steeringByHand()){
+      /* a finger on the road is the steering wheel; a mouse, which has
+         A / D beside it, looks round instead */
+      if (steeringByHand() && e.pointerType !== 'mouse'){
         state.wheel = { id:e.pointerId, x:e.clientX };
         input.steerAbs = 0;
         try { canvas.setPointerCapture(e.pointerId); } catch(err){}

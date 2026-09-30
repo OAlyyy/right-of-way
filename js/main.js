@@ -48,10 +48,10 @@
   var EXAM_BRIEF = {
     task: { de:'Die Prüfungsfahrt dauert ' + EXAM_MINUTES + ' Minuten. Der Prüfer sagt dir, wo es langgeht. ' +
                 'Es gibt keine Hinweise und kein Zurückspulen. Kleine Fehler werden notiert; ein schwerer ' +
-                'Fehler beendet die Prüfung sofort. Vor jedem Abbiegen: Spiegel (M), Blinker, Schulterblick (Q/E).',
+                'Fehler beendet die Prüfung sofort. Vor jedem Abbiegen: Spiegel (M), Blinker (Q/E), Schulterblick (←/→).',
             en:'The test drive lasts ' + EXAM_MINUTES + ' minutes. The examiner tells you where to go. ' +
                'No hints, no rewinding. Small faults are noted; one serious fault ends the test at once. ' +
-               'Before every turn: mirror (M), indicator, shoulder check (Q/E).' },
+               'Before every turn: mirror (M), indicator (Q/E), shoulder check (←/→).' },
     merk: { de:'Nicht bestanden bei einem schweren Fehler, bei fünf kleinen, oder wenn derselbe kleine dreimal passiert.',
             en:'You fail on one serious fault, on five small ones, or on the same small one three times.' }
   };
@@ -124,8 +124,8 @@
     /* the keyboard legend in the briefing */
     var keys = el('brief-keys');
     clear(keys);
-    [['W', 'keys.throttle'], ['S', 'keys.brake'], ['Q E', 'keys.look'],
-     ['A D', 'keys.indicators'], ['V', 'keys.view'], ['H', 'keys.hints']]
+    [['W', 'keys.throttle'], ['S', 'keys.brake'], ['A D', 'keys.steer'], ['Q E', 'keys.indicators'],
+     ['← →', 'keys.look'], ['M', 'keys.mirror'], ['V', 'keys.view'], ['H', 'keys.hints']]
     .forEach(function(k){
       var sp = make('span');
       k[0].split(' ').forEach(function(key){ sp.appendChild(make('kbd', null, key)); });
@@ -829,16 +829,16 @@
     if (e.repeat && k === ' ' && state.world && state.world.hold) return;
     if (k === 'w' || k === 'arrowup')   { input.throttle = true; el('pedal-gas').classList.add('down'); }
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = true; el('pedal-brake').classList.add('down'); }
-    /* the arrows steer when you drive yourself; Q / E always turn your head */
-    var steer = steeringByHand();
-    if (k === 'q' || (k === 'arrowleft' && !steer))  look.left = true;
-    if (k === 'e' || (k === 'arrowright' && !steer)) look.right = true;
-    if (k === 'arrowleft' && steer)  wheelKeys.left = true;
-    if (k === 'arrowright' && steer) wheelKeys.right = true;
+    /* A / D steer, as in any driving game; Q / E are the indicator stalk;
+       the arrow keys turn your head (shoulder check) */
+    if (k === 'a') wheelKeys.left = true;
+    if (k === 'd') wheelKeys.right = true;
+    if (k === 'arrowleft')  look.left = true;
+    if (k === 'arrowright') look.right = true;
     if (k === 'l'){ toggleSteer(); return; }
     if (k === 'm') look.mirror = true;
-    if (k === 'a') setIndicator('left');
-    if (k === 'd') setIndicator('right');
+    if (k === 'q' && !e.repeat) setIndicator('left');
+    if (k === 'e' && !e.repeat) setIndicator('right');
     if (k === 'x') input.indicator = 'off';
     if (k === 'r'){ if (state.mode === 'drive') startDrive(); else startScenario(state.scIndex); }
   });
@@ -846,10 +846,10 @@
     var k = e.key.toLowerCase();
     if (k === 'w' || k === 'arrowup')   { input.throttle = false; el('pedal-gas').classList.remove('down'); }
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = false; el('pedal-brake').classList.remove('down'); }
-    if (k === 'q' || k === 'arrowleft')  look.left = false;
-    if (k === 'e' || k === 'arrowright') look.right = false;
-    if (k === 'arrowleft')  wheelKeys.left = false;
-    if (k === 'arrowright') wheelKeys.right = false;
+    if (k === 'arrowleft')  look.left = false;
+    if (k === 'arrowright') look.right = false;
+    if (k === 'a') wheelKeys.left = false;
+    if (k === 'd') wheelKeys.right = false;
     if (k === 'm') look.mirror = false;
   });
   window.addEventListener('blur', function(){
@@ -886,7 +886,9 @@
   function initDragLook(){
     canvas.addEventListener('pointerdown', function(e){
       if (state.screen !== 'play') return;
-      if (steeringByHand()){
+      /* a finger on the road is the steering wheel; a mouse, which has
+         A / D beside it, looks round instead */
+      if (steeringByHand() && e.pointerType !== 'mouse'){
         state.wheel = { id:e.pointerId, x:e.clientX };
         input.steerAbs = 0;
         try { canvas.setPointerCapture(e.pointerId); } catch(err){}

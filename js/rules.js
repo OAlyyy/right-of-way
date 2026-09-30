@@ -341,7 +341,7 @@ var Rules = (function(){
         en:'Before a turn you look over your shoulder into the blind spot, which no mirror shows. Turning right across a cycle path without it fails the real exam.' },
       tip:{
         de:'Reihenfolge: Innenspiegel – Blinker – Aussenspiegel – Schulterblick – abbiegen.',
-        en:'Order: mirror – indicate – door mirror – shoulder check – turn. (Q / E to look, M for the mirror.)' }
+        en:'Order: mirror – indicate – door mirror – shoulder check – turn. (← / → to look, M for the mirror.)' }
     },
     schulterblick_rad: {
       pts:35, sev:'major', law:'§ 9 (1) StVO',
@@ -351,7 +351,7 @@ var Rules = (function(){
         en:'You turned across a cycle path without looking over your shoulder. A cyclist in your blind spot would have been invisible to you – this is the most common reason people fail the exam.' },
       tip:{
         de:'Kurz vor dem Abbiegen, wenn du schon langsam bist: Schulterblick zur Abbiegeseite.',
-        en:'Just before the turn, once you are slow: look over the shoulder on the side you turn to (E for right, Q for left).' }
+        en:'Just before the turn, once you are slow: look over the shoulder on the side you turn to (→ for right, ← for left).' }
     },
     spiegel: {
       pts:5, sev:'minor', law:'§ 9 (1) StVO',

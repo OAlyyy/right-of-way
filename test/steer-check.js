@@ -7,7 +7,7 @@
 const fs = require('fs'), vm = require('vm'), path = require('path');
 
 const ctx = vm.createContext({ console, Math, Object, Array, JSON, Number, String, Date });
-['i18n.js','geo.js','rules.js','sim.js','scenarios.js','city.js','drive.js'].forEach(f =>
+['i18n.js','geo.js','rules.js','sim.js','scenarios.js','city.js','drive.js','cityview.js'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','js',f),'utf8'), ctx, { filename:f }));
 const { Drive, Rules, Geo, kmh, CFG } = ctx;
 

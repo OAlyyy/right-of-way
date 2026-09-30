@@ -54,19 +54,26 @@ watches — speed, indicators, and above all who goes first.
 |---|---|
 | `W` / `↑` | accelerate |
 | `S` / `↓` / `Space` | brake |
-| `←` / `→` | **steer** (free drive and test; in lessons: look) |
-| `Q` / `E` | **look left / right** — hold it |
+| `A` / `D` | **steer** (free drive and test) |
+| `Q` / `E` | indicator left / right (toggles) |
+| `←` / `→` | **look left / right** (shoulder check) — hold it; the mouse on the road looks round too |
 | `M` | check the mirror |
 | `L` | steer yourself / let the car steer |
-| `A` / `D` | indicator left / right (toggles) |
+| `X` | indicator off |
 | `V` | switch driver view ⇄ map view |
 | `H` | instructor hints on / off |
 | `R` | restart the lesson |
 | `Esc` | back to the lesson list |
 
-On touch: the LOOK buttons sit bottom-left and the pedals bottom-right, the
-indicator arrows flank the speedometer, and you can **drag the road** to turn
-your head.
+On touch: the LOOK and MIRROR buttons sit bottom-left and the pedals
+bottom-right, the indicator arrows flank the speedometer, and in free drive
+you **drag the road** to steer (in lessons it turns your head).
+
+In the 3D view your own car has a working instrument cluster (speedometer,
+indicator arrows) seen through the wheel, and the town has five kinds of car
+(hatchback, saloon, estate, SUV, van), cars parked along the quiet streets -
+solid, hitting one counts - people walking the pavements, front-garden
+hedges, balconies and clouds.
 
 ### Looking is part of the lesson
 

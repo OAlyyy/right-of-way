@@ -149,6 +149,17 @@ var Render = (function(){
         ctx.stroke();
       }
     });
+    /* cars parked along the quiet streets */
+    (view.parked || []).forEach(function(pc){
+      var w = pc.col ? CFG.CAR_W : CFG.CAR_L, h = pc.col ? CFG.CAR_L : CFG.CAR_W;
+      ctx.fillStyle = COL.shadow;
+      ctx.fillRect(pc.x - w/2 + 2, pc.y - h/2 + 3, w, h);
+      ctx.fillStyle = pc.color;
+      ctx.fillRect(pc.x - w/2, pc.y - h/2, w, h);
+      ctx.fillStyle = 'rgba(20,28,38,0.6)';
+      if (pc.col) ctx.fillRect(pc.x - w/2 + 4, pc.y - h*0.2, w - 8, h*0.36);
+      else ctx.fillRect(pc.x - w*0.2, pc.y - h/2 + 4, w*0.36, h - 8);
+    });
     view.trees.forEach(function(t){
       ctx.fillStyle = night ? 'rgba(36,54,31,0.9)' : 'rgba(86,122,69,0.92)';
       ctx.beginPath(); ctx.arc(t.x, t.y, t.r*0.9, 0, Math.PI*2); ctx.fill();

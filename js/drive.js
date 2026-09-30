@@ -630,6 +630,17 @@ var Drive = (function(){
       worst = Math.max(worst, this.map.offRoad(x, y));
     }, this);
     p.offRoad = worst;
+    /* the cars parked along the quiet streets are solid */
+    if (typeof CityView !== 'undefined' && p.v > kmh(2)){
+      var hit = null;
+      [[hl, hw], [hl, -hw], [hl, 0]].forEach(function(k){
+        if (!hit) hit = CityView.parkedAt(this.map, p.pos.x + c*k[0] - s*k[1], p.pos.y + s*k[0] + c*k[1], 0);
+      }, this);
+      if (hit){
+        this.fault('kollision', null, { de:'Ein parkendes Auto.', en:'A parked car.' });
+        p.v = 0;
+      }
+    }
     if (worst > 3 && p.v > kmh(2)){
       this.fault('bordstein', null, { de:'Mit dem Rad über den Bordstein.', en:'A wheel went over the kerb.' });
       p.v = Math.max(0, p.v - 60*CFG.PPM*dt*(worst > 14 ? 1 : 0.15));   // a knock, or a wall
@@ -818,7 +829,7 @@ var Drive = (function(){
     var looked = seen[w.side] !== undefined && this.t - seen[w.side] < LOOK_WINDOW;
     var mirrored = seen.mirror !== undefined && this.t - seen.mirror < MIRROR_WINDOW;
     var side = w.side === 'right' ? { de:'rechts', en:'right' } : { de:'links', en:'left' };
-    var key = w.side === 'right' ? 'E' : 'Q';
+    var key = w.side === 'right' ? '→' : '←';
     if (!looked){
       var cycle = this.cyclePathAcross(w.node, w.fromArm, w.side);
       this.fault(cycle ? 'schulterblick_rad' : 'schulterblick', null,

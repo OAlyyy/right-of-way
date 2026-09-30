@@ -49,16 +49,27 @@ var CityView = (function(){
     function house(ax, ay, bx, by, front, onMain){
       if (rand() < 0.10) return;                       // a gap: garden, driveway
       var yard = rand() < 0.5 ? 0 : 10 + rand()*24;    // some sit behind a front garden
+      /* a front garden is fenced off from the pavement by a low hedge */
+      var hedge = null;
+      if (yard){
+        if (front === 'N') hedge = { x0:ax, y0:ay, x1:bx, y1:ay + 7 };
+        if (front === 'S') hedge = { x0:ax, y0:by - 7, x1:bx, y1:by };
+        if (front === 'W') hedge = { x0:ax, y0:ay, x1:ax + 7, y1:by };
+        if (front === 'E') hedge = { x0:bx - 7, y0:ay, x1:bx, y1:by };
+      }
       if (front === 'N') ay += yard; if (front === 'S') by -= yard;
       if (front === 'W') ax += yard; if (front === 'E') bx -= yard;
       var floors = onMain ? 4 + Math.floor(rand()*2) : 2 + Math.floor(rand()*3);
       var h = (floors*3.0 + 0.6) * M;
+      var shop = onMain && rand() < 0.7;
       blk.houses.push({
         x0:ax, y0:ay, x1:bx, y1:by, h:h, floors:floors, front:front,
         color:FACADES[Math.floor(rand()*FACADES.length)],
         roof: rand() < 0.72 ? ROOFS[Math.floor(rand()*ROOFS.length)] : null,
         roofH:(1.8 + rand()*1.6) * M,
-        shop: onMain && rand() < 0.7,
+        shop: shop,
+        balcony: floors >= 3 && rand() < 0.5,          // a stack of balconies on the street side
+        hedge: hedge,
         seed: Math.floor(rand()*1e6)
       });
     }
@@ -164,9 +175,56 @@ var CityView = (function(){
     for (c = 0; c < cols; c++) alongStreet(true, c);
     for (r = 0; r < rows; r++) alongStreet(false, r);
 
+    /* Along every stretch of street between two junctions: cars parked at
+       the kerb of the quiet streets (half on the pavement, as Frankfurt
+       parks), people walking the pavements, and the odd manhole cover.
+       Everything keeps clear of the junctions themselves. */
+    var parked = [], walkers = [], manholes = [];
+    var CAR_COLS = ['#c9ccd1','#b7bbc1','#6d7177','#2b2f36','#1d1f23','#f1f1ee','#e4e5e2',
+                    '#1f3a5f','#2d4a6e','#9e2b25','#3d5a4a','#8a7f6d'];
+    function stretches(isCol, i){
+      var main = isCol ? i === map.priCol : i === map.priRow;
+      var line = isCol ? colX(i) : rowY(i);
+      var n = isCol ? rows : cols;
+      for (var k = 0; k < n - 1; k++){
+        var a = isCol ? rowY(k) : colX(k), b = isCol ? rowY(k+1) : colX(k+1);
+        var clear = CFG.BOX + City.CORNER_R + 40;
+        var from = a + clear, to = b - clear;
+        [-1, 1].forEach(function(side){
+          var railSide = isCol && i === map.railCol && side > 0;
+          /* parked cars, facing the way the traffic on their side runs */
+          if (!main && !railSide){
+            var h = isCol ? (side > 0 ? -Math.PI/2 : Math.PI/2) : (side > 0 ? 0 : Math.PI);
+            for (var t = from + rand()*30; t < to - 52; ){
+              if (rand() < 0.7){
+                var along = t + 26;
+                parked.push({ x:isCol ? line + side*57 : along, y:isCol ? along : line + side*57, h:h, col:isCol,
+                              color:rand() < 0.05 ? '#efe6c8' : CAR_COLS[Math.floor(rand()*CAR_COLS.length)],
+                              type:Math.floor(rand()*5), seed:Math.floor(rand()*1e6) });
+              }
+              t += 52 + 12 + rand()*34;
+            }
+          }
+          /* somebody walking this pavement, to and fro */
+          if (rand() < 0.85){
+            var off = railSide ? City.RAIL.bed[1] + 6 + 12 + WALK*0.5 : main ? CFG.BOX + 16 : KERB + WALK - 8;
+            walkers.push({ col:isCol, line:line, side:side, off:off, a:from, b:to,
+                           phase:rand(), speed:(1.1 + rand()*0.5)*M, look:rand() });
+          }
+        });
+        if (rand() < 0.8){
+          var m = a + (b - a)*(0.25 + rand()*0.5), lat = (rand() < 0.5 ? -1 : 1)*CFG.HALF*0.9;
+          manholes.push({ x:isCol ? line + lat : m, y:isCol ? m : line + lat });
+        }
+      }
+    }
+    for (c = 0; c < cols; c++) stretches(true, c);
+    for (r = 0; r < rows; r++) stretches(false, r);
+
     var houses = [];
     blocks.forEach(function(b){ houses = houses.concat(b.houses); });
     map._view = { blocks:blocks, houses:houses, trees:trees, lamps:lamps,
+                  parked:parked, walkers:walkers, manholes:manholes,
                   colX:colX, rowY:rowY };
     return map._view;
   }
@@ -191,5 +249,26 @@ var CityView = (function(){
     });
   }
 
-  return { build:build, railBed:railBed, bikePaths:bikePaths, KERB:KERB, WALK:WALK, rng:rng };
+  /* where a pavement walker is at time t: to and fro along their stretch */
+  function walkerAt(wk, t){
+    var len = wk.b - wk.a, u = (t*wk.speed/len + wk.phase*2) % 2;
+    var back = u > 1, f = back ? 2 - u : u;
+    var along = wk.a + f*len, lat = wk.side*wk.off + (back ? -1 : 1)*wk.side*3;
+    var x = wk.col ? wk.line + lat : along, y = wk.col ? along : wk.line + lat;
+    var dir = back ? -1 : 1;
+    return { x:x, y:y, h: wk.col ? (dir > 0 ? Math.PI/2 : -Math.PI/2) : (dir > 0 ? 0 : Math.PI) };
+  }
+  /* is (x, y) inside a parked car (with a margin)? returns it, or null */
+  function parkedAt(map, x, y, margin){
+    var v = build(map), m = margin || 0;
+    for (var i = 0; i < v.parked.length; i++){
+      var pc = v.parked[i];
+      var hx = (pc.col ? CFG.CAR_W : CFG.CAR_L)/2 + m, hy = (pc.col ? CFG.CAR_L : CFG.CAR_W)/2 + m;
+      if (Math.abs(x - pc.x) < hx && Math.abs(y - pc.y) < hy) return pc;
+    }
+    return null;
+  }
+
+  return { build:build, railBed:railBed, bikePaths:bikePaths, walkerAt:walkerAt, parkedAt:parkedAt,
+           KERB:KERB, WALK:WALK, rng:rng };
 })();
