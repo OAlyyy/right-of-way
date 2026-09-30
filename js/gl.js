@@ -51,6 +51,7 @@ var GL3D = (function(){
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(60, 1, 0.08, 2500);
     camera.rotation.order = 'YXZ';
+    camera.layers.enable(1);                            // people (see PEOPLE_LAYER)
 
     hemi = new THREE.HemisphereLight(0xcfe3ff, 0x5b5346, 0.75);
     scene.add(hemi);
@@ -61,6 +62,7 @@ var GL3D = (function(){
     var sc = sun.shadow.camera;
     sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70; sc.near = 1; sc.far = 400;
     sun.shadow.bias = -0.0004;
+    sun.shadow.camera.layers.enable(1);                 // people cast shadows too
     sun.shadow.normalBias = 0.03;
     scene.add(sun); scene.add(sun.target);
 
@@ -105,6 +107,7 @@ var GL3D = (function(){
     scene.add(clouds);
 
     loadTextures();
+    loadPeople();
     syncTheme();
     ok = true;
     return ok;
@@ -139,7 +142,7 @@ var GL3D = (function(){
       manhole: std({ color:0x2e2d2b, metalness:0.6, roughness:0.55 }),
       hedge:   std({ color:0x4f6e3c, roughness:1.0 }),
       balc:    std({ color:0xd8d4cc, roughness:0.85 }),
-      railing: std({ color:0x2c2f33, metalness:0.5, roughness:0.5 }),
+      railing: std({ color:0xcfd2d4, metalness:0.35, roughness:0.45 }),     // light painted metal
       pavers:  std({ color:0xcfcac2, roughness:0.9 }),
       gravel:  std({ color:0xb8b0a4, roughness:1.0 }),
       grass:   std({ color:0xa8b890, roughness:1.0 }),
@@ -921,6 +924,7 @@ var GL3D = (function(){
       .sort(function(a, b){ return a.d - b.d; }).slice(0, 28);
     near.forEach(function(o){
       var g = o.wk._mesh;
+      if (g && people.ready && g.userData.version !== people.version){ scene.remove(g); g = null; }
       if (!g || g.parent !== scene){ g = o.wk._mesh = buildPerson(o.wk.look, false); scene.add(g); walkerAll.push(g); }
       g.visible = true;
       g.position.set(o.at.x*U, 0.02, o.at.y*U);
@@ -1040,8 +1044,8 @@ var GL3D = (function(){
       blink:  new THREE.MeshStandardMaterial({ color:0xffa200, emissive:0xffa200, emissiveIntensity:3.0 }),
       blue:   new THREE.MeshStandardMaterial({ color:0x2a6dff, emissive:0x3d7dff, emissiveIntensity:4.0 }),
       blueOff:new THREE.MeshStandardMaterial({ color:0x0b1e44, roughness:0.3 }),
-      /* matt black plastic, unlit: it sits in the car's own shade */
-      dash:   new THREE.MeshBasicMaterial({ color:0x121314 }),
+      /* dark grey, slightly grained plastic: lit, so it has shape, but dull */
+      dash:   new THREE.MeshStandardMaterial({ color:0x232428, roughness:0.95, metalness:0, envMapIntensity:0.15 }),
       tramRed:new THREE.MeshStandardMaterial({ color:0xb8322a, roughness:0.4, metalness:0.2 }),
       grey:   new THREE.MeshStandardMaterial({ color:0x3b3f45, roughness:0.6 }),
       taxi:   null
@@ -1152,7 +1156,12 @@ var GL3D = (function(){
       body: extrudeSide(profileShape(bodyWithArches(T, L), L), W, 0.09),
       cab:  extrudeSide(profileShape(T.cab, L), W*T.glassW, 0.1),
       roof: extrudeSide(roof, W*(T.glassW - 0.04), 0.04),
-      tyre: new THREE.CylinderGeometry(T.wheelR, T.wheelR, 0.24, 24).rotateX(Math.PI/2),
+      /* a tyre with a rounded sidewall: a fat torus, the rim filling its middle */
+      tyre: new THREE.TorusGeometry(T.wheelR - 0.1, 0.105, 10, 28).scale(1, 1, 1.1),
+      seam: new THREE.BoxGeometry(0.012, 0.5, 0.008),
+      handle: new THREE.BoxGeometry(0.15, 0.03, 0.025),
+      rail: new THREE.BoxGeometry(L*0.5, 0.035, 0.04),
+      exhaust: new THREE.CylinderGeometry(0.035, 0.035, 0.14, 10).rotateZ(Math.PI/2),
       rim:  new THREE.CylinderGeometry(T.wheelR*0.62, T.wheelR*0.62, 0.03, 20).rotateX(Math.PI/2),
       spoke: new THREE.BoxGeometry(T.wheelR*1.1, 0.045, 0.02),
       hub:  new THREE.CylinderGeometry(0.05, 0.05, 0.05, 10).rotateX(Math.PI/2),
@@ -1172,47 +1181,85 @@ var GL3D = (function(){
     };
     return (carGeo[key] = G);
   }
+  /* Every fixed part of one body type, merged by material. Built once per
+     type and shared by every car of that type. The windscreen and the
+     roof (with the door pillar) are kept apart so the player's own car
+     can hide them from inside. */
+  function bakedCar(type, G){
+    if (G.baked) return G.baked;
+    var T = G.T, L = G.L, W = G.W, h = L/2, C = {};
+    var m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), pv = new THREE.Vector3(), sv = new THREE.Vector3();
+    function put(key, geo, x, y, z, ry, sy, rz){
+      m4.compose(pv.set(x, y, z), q.setFromEuler(e.set(0, ry || 0, rz || 0)), sv.set(1, sy || 1, 1));
+      (C[key] || (C[key] = new Merger())).add(geo, m4);
+    }
+    put('paint', G.body, 0, 0, 0);
+    put('glass', G.cab, 0, 0, 0);
+    put('cabPaint', G.roof, 0, 0, 0);
+    put('cabPaint', G.pillar, (T.roof[0] + T.roof[1])*0.42*L, (G.top + T.body[6][1])/2, 0);
+    if (G.panel) put('paint', G.panel, -L*0.19, (G.top + 1.14)/2, 0);      // a panel van's blind sides
+    if (T.sill) put('trim', G.sill, 0, T.ride + 0.08, 0);
+    put('trim', G.grille, h + 0.005, T.ride + 0.22, 0);
+    put('trim', G.bumper, h - 0.02, T.ride + 0.04, 0);
+    put('trim', G.bumper, -h + 0.02, T.ride + 0.04, 0);
+    var mirX = T.cab[0][0]*L - 0.08, mirY = T.cab[0][1] + 0.08;
+    [-1, 1].forEach(function(side){
+      put('paint', G.mirror, mirX, mirY, side*(W/2 + 0.09));
+      put('glass', G.mirrorGlass, mirX - 0.081, mirY, side*(W/2 + 0.09), -Math.PI/2);
+    });
+    [[L*0.31, 1], [L*0.31, -1], [-L*0.30, 1], [-L*0.30, -1]].forEach(function(w){
+      var zc = w[1]*(W/2 - 0.1);
+      put('tyre', G.tyre, w[0], T.wheelR, zc);
+      put('rim', G.rim, w[0], T.wheelR, zc + w[1]*0.12);
+      for (var k = 0; k < 5; k++) put('rim', G.spoke, w[0], T.wheelR, zc + w[1]*0.135, 0, 1, k*Math.PI/5);
+      put('trim', G.hub, w[0], T.wheelR, zc + w[1]*0.14);
+    });
+    /* dark liners in the arches, so you never see through the car */
+    [L*0.31, -L*0.30].forEach(function(x){ put('trim', G.liner, x, T.wheelR*2 + 0.04, 0); });
+    /* the doors: shut lines where they meet, a handle on each */
+    var belt = T.cab[0][1], seamH = belt - T.ride - 0.16, seamY = T.ride + 0.1 + seamH/2;
+    var doors = [T.cab[0][0]*L - 0.05, (T.roof[0] + T.roof[1])*0.42*L];
+    if (!T.panel) doors.push(Math.max(-L*0.36, T.roof[1]*L*0.72));
+    [-1, 1].forEach(function(side){
+      doors.forEach(function(x, i){
+        put('trim', G.seam, x, seamY, side*(W/2 + 0.002), 0, seamH/0.5);
+        if (i < doors.length - 1) put('chrome', G.handle, x - 0.22, belt - 0.12, side*(W/2 + 0.01));
+      });
+    });
+    if (type === 'estate' || type === 'suv')
+      [-1, 1].forEach(function(side){ put('trim', G.rail, (T.roof[0] + T.roof[1])*0.5*L, G.top + 0.06, side*W*0.34); });
+    put('chrome', G.exhaust, -h - 0.02, T.ride + 0.02, W*0.3);
+    [-1, 1].forEach(function(side){
+      put('head', G.lamp, h - 0.01, T.lampY, side*(W/2 - 0.30));
+      put('drl', G.drl, h - 0.005, T.lampY - 0.07, side*(W/2 - 0.30));
+      put('tail', G.lampRear, -h + 0.005, T.tailY, side*(W/2 - 0.28));
+    });
+    G.baked = {};
+    Object.keys(C).forEach(function(k){ G.baked[k] = C[k].mesh(null).geometry; });
+    return G.baked;
+  }
+
   /* a car, facing +x, wheels on y = 0, width along z (+z is its right) */
   function buildCar(v){
-    var G = carGeometry(typeFor(v), v.len*U, v.wid*U), T = G.T, L = G.L, W = G.W, h = L/2;
+    var type = typeFor(v);
+    var G = carGeometry(type, v.len*U, v.wid*U), T = G.T, L = G.L, W = G.W, h = L/2;
     var VMs = vehicleMats();
     var paint = v.isPlayer ? ownPaint() : paintMat(v.taxi ? '#efe6c8' : v.color);
     var g = new THREE.Group();
-    part(G.body, paint, 0, 0, 0, g, true);
-    g.userData.cab = part(G.cab, VMs.glass, 0, 0, 0, g, true);
-    g.userData.roofPanel = part(G.roof, paint, 0, 0, 0, g, true);
-    g.userData.pillar = part(G.pillar, paint, (T.roof[0] + T.roof[1])*0.42*L, (G.top + T.body[6][1])/2, 0, g, false);
-    if (G.panel) part(G.panel, paint, -L*0.19, (G.top + 1.14)/2, 0, g, true);          // a panel van's blind sides
-    if (T.sill) part(G.sill, VMs.trim, 0, T.ride + 0.08, 0, g);
-    part(G.grille, VMs.trim, h + 0.005, T.ride + 0.22, 0, g);
-    part(G.bumper, VMs.trim, h - 0.02, T.ride + 0.04, 0, g);
-    part(G.bumper, VMs.trim, -h + 0.02, T.ride + 0.04, 0, g);
-    var mirX = T.cab[0][0]*L - 0.08, mirY = T.cab[0][1] + 0.08;
-    [-1, 1].forEach(function(side){
-      part(G.mirror, paint, mirX, mirY, side*(W/2 + 0.09), g);
-      var mg = part(G.mirrorGlass, VMs.glass, mirX - 0.081, mirY, side*(W/2 + 0.09), g);
-      mg.rotation.y = -Math.PI/2;
+    /* the whole car, baked per body type into one mesh per material and
+       shared by every car of that type: ~10 draws instead of ~70 */
+    var B = bakedCar(type, G);
+    var mats = { paint:paint, glass:VMs.glass, cabPaint:paint, trim:VMs.trim, chrome:VMs.chrome, tyre:VMs.tyre,
+                 rim:VMs.rim, head:VMs.head, drl:VMs.drl, tail:VMs.tail };
+    Object.keys(B).forEach(function(k){
+      var m = new THREE.Mesh(B[k], mats[k]);
+      m.castShadow = k === 'paint' || k === 'glass' || k === 'tyre';
+      g.add(m);
+      if (k === 'glass') g.userData.cab = m;
+      if (k === 'cabPaint') g.userData.roofPanel = m;
     });
+    g.userData.pillar = { visible:true };             // part of the roof mesh now
     g.userData.wheels = [];
-    [[L*0.31, 1], [L*0.31, -1], [-L*0.30, 1], [-L*0.30, -1]].forEach(function(w){
-      var wg = new THREE.Group(); wg.position.set(w[0], T.wheelR, w[1]*(W/2 - 0.1));
-      var t = new THREE.Mesh(G.tyre, VMs.tyre); t.castShadow = true; wg.add(t);
-      var r = new THREE.Mesh(G.rim, VMs.rim); r.position.z = w[1]*0.12; wg.add(r);
-      for (var k = 0; k < 5; k++){
-        var sp = new THREE.Mesh(G.spoke, VMs.rim);
-        sp.position.z = w[1]*0.135; sp.rotation.z = k*Math.PI/5;
-        wg.add(sp);
-      }
-      var hb = new THREE.Mesh(G.hub, VMs.trim); hb.position.z = w[1]*0.14; wg.add(hb);
-      g.add(wg); g.userData.wheels.push(wg);
-    });
-    /* dark liners in the arches, so you never see through the car */
-    [L*0.31, -L*0.30].forEach(function(x){ part(G.liner, VMs.trim, x, T.wheelR*2 + 0.04, 0, g); });
-    [-1, 1].forEach(function(side){
-      part(G.lamp, VMs.head, h - 0.01, T.lampY, side*(W/2 - 0.30), g);
-      part(G.drl, VMs.drl, h - 0.005, T.lampY - 0.07, side*(W/2 - 0.30), g);
-      part(G.lampRear, VMs.tail, -h + 0.005, T.tailY, side*(W/2 - 0.28), g);
-    });
     /* brake lights and indicators: separate lit copies, shown when on */
     g.userData.brake = [-1, 1].map(function(side){
       var m = part(G.lampRear, VMs.brake, -h - 0.004, T.tailY, side*(W/2 - 0.28), g); m.visible = false; return m;
@@ -1472,9 +1519,79 @@ var GL3D = (function(){
     };
     return PG;
   }
+  /* ---------------- real people: rigged, animated models ---------------- */
+  /* Quaternius' "Animated Men Pack" (CC0): loaded once from the packed
+     assets, then every pedestrian gets their own copy - own colours, own
+     height, walking or standing. Until they have loaded (a moment after
+     the page opens) the simple figures below stand in. */
+  var people = { ready:false, models:[], version:0 };
+  var PEOPLE_LAYER = 1;
+  var SHIRTS = ['#2f3b52','#7a1f2b','#3d4a3a','#c9c4b8','#1f1f24','#8b7355','#2c5a7a','#6b2f5b','#c4572e','#4a6a8a','#e0ddd4','#5a5a5a'];
+  function loadPeople(){
+    if (typeof THREE.GLTFLoader === 'undefined' || typeof ASSETS === 'undefined') return;
+    var keys = Object.keys(ASSETS).filter(function(k){ return /^model_/.test(k); });
+    var loader = new THREE.GLTFLoader(), left = keys.length;
+    keys.forEach(function(k){
+      fetch(ASSETS[k]).then(function(r){ return r.arrayBuffer(); }).then(function(buf){
+        loader.parse(buf, '', function(gltf){
+          var root = gltf.scene;
+          root.updateMatrixWorld(true);
+          var box = new THREE.Box3().setFromObject(root);
+          /* bounds generous enough for any pose, so a person off screen
+             is skipped (culling a walking figure by its standing pose
+             would cut off swinging arms and legs) */
+          root.traverse(function(o){
+            if (!o.isSkinnedMesh) return;
+            o.geometry.computeBoundingSphere();
+            o.geometry.boundingSphere.radius *= 1.8;
+          });
+          var clip = function(name){
+            return gltf.animations.filter(function(a){ return new RegExp(name + '$').test(a.name); })[0];
+          };
+          people.models.push({ scene:root, height:Math.max(0.01, box.max.y - box.min.y), minY:box.min.y,
+                               walk:clip('Walk'), idle:clip('Idle') || clip('Standing') });
+          if (--left === 0){ people.ready = true; people.version++; }
+        }, function(){ if (--left === 0 && people.models.length){ people.ready = true; people.version++; } });
+      }).catch(function(){ left--; });
+    });
+  }
+  function buildModelPerson(look, kid){
+    var mdl = people.models[Math.floor(look*997) % people.models.length];
+    var inst = THREE.SkeletonUtils.clone(mdl.scene);
+    var h = kid ? 1.25 : 1.62 + ((look*13.7) % 1)*0.3, s = h / mdl.height;
+    inst.scale.multiplyScalar(s);
+    inst.position.y = -mdl.minY*s;
+    inst.rotation.y = Math.PI/2;                     // the model faces +z; ours face +x
+    inst.traverse(function(o){
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.layers.set(PEOPLE_LAYER);                    // drawn and shadowed, but not in the small mirror
+      var recolor = function(m){
+        var c = null;
+        if (/^Shirt/.test(m.name)) c = pick(SHIRTS, (look*7.3) % 1);
+        else if (/^Pants/.test(m.name)) c = pick(TROUSERS, (look*3.7) % 1);
+        else if (/^Hair/.test(m.name)) c = pick(HAIR, (look*9.1) % 1);
+        else if (/^Skin/.test(m.name)) c = pick(SKINS, (look*5.3) % 1);
+        if (!c) return m;
+        var n = m.clone(); n.color.set(c); return n;
+      };
+      o.material = Array.isArray(o.material) ? o.material.map(recolor) : recolor(o.material);
+    });
+    var g = new THREE.Group();
+    g.add(inst);
+    var mixer = new THREE.AnimationMixer(inst);
+    var walk = mdl.walk ? mixer.clipAction(mdl.walk) : null, idle = mdl.idle ? mixer.clipAction(mdl.idle) : null;
+    [walk, idle].forEach(function(a){ if (a){ a.play(); a.setEffectiveWeight(0); a.time = look*a.getClip().duration; } });
+    if (idle) idle.setEffectiveWeight(1);
+    g.userData = { model:true, mixer:mixer, walk:walk, idle:idle, version:people.version, lastT:null };
+    return g;
+  }
+
   /* a person facing +x, feet on y = 0; limbs hang from hip and shoulder
-     pivots so they can swing */
-  function buildPerson(look, kid){
+     pivots so they can swing. `simple` forces the stand-in figure (a
+     cyclist's, whose pose the models do not have). */
+  function buildPerson(look, kid, simple){
+    if (people.ready && !simple) return buildModelPerson(look, kid);
     var G = personGeo(), g = new THREE.Group(), body = new THREE.Group();
     var s = kid ? 0.68 : (0.94 + 0.12*((look*7) % 1));
     body.scale.setScalar(s);
@@ -1500,6 +1617,16 @@ var GL3D = (function(){
     return g;
   }
   function swing(g, amount, t){
+    if (g.userData.model){
+      /* the model's own walk or idle, advanced by game time - so people
+         freeze when the game pauses and do not skip on a rewind */
+      var u = g.userData, dt = u.lastT === null ? 0 : Geo.clamp(t - u.lastT, 0, 0.1);
+      u.lastT = t;
+      if (u.walk) u.walk.setEffectiveWeight(amount > 0 ? 1 : 0);
+      if (u.idle) u.idle.setEffectiveWeight(amount > 0 ? 0 : 1);
+      u.mixer.update(dt);
+      return;
+    }
     var ph = t*7.5 + g.userData.phase;
     g.userData.limbs.forEach(function(l){
       var a = Math.sin(ph) * amount * l.side;
@@ -1515,6 +1642,8 @@ var GL3D = (function(){
       var k = ped.gid || (ped.gid = 'p' + (++pedIds));
       seen[k] = true;
       var g = dyn.peds[k];
+      /* built before the models arrived? swap in the real person */
+      if (g && people.ready && g.userData.version !== people.version){ scene.remove(g); g = null; }
       if (!g){ g = buildPerson(ped.look, ped.kid); scene.add(g); dyn.peds[k] = g; }
       var pt = ped.point();
       g.position.set(pt.x*U, 0, pt.y*U);
@@ -1557,7 +1686,7 @@ var GL3D = (function(){
     part(new THREE.BoxGeometry(0.1, 0.02, 0.56), colorMat('#1a1a1a'), 0.38, 1.0, 0, g);          // handlebar
     part(new THREE.BoxGeometry(0.24, 0.05, 0.14), colorMat('#1a1a1a'), -0.22, 0.93, 0, g);        // saddle
     /* the rider: leaning a little forward, hands on the bar */
-    var rider = buildPerson(v.look || 0.3, false);
+    var rider = buildPerson(v.look || 0.3, false, true);
     rider.position.set(-0.24, -0.02, 0);
     var body = rider.children[0];
     body.rotation.z = -0.22;

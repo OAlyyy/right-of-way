@@ -266,8 +266,15 @@ Third-party files, all in the repo so the game runs offline:
 |---|---|
 | `js/vendor/three.min.js`, `RoomEnvironment.js`, `Sky.js` | three.js r147, MIT (`js/vendor/THREE-LICENSE.txt`) |
 | `assets/tex/*.jpg` → `js/vendor/assets.js` | textures from [Poly Haven](https://polyhaven.com), CC0 |
+| `assets/models/*.glb` → `js/vendor/assets.js` | people: "Animated Men Pack" by [Quaternius](https://quaternius.com), CC0 (via poly.pizza) |
+| `js/vendor/GLTFLoader.js`, `SkeletonUtils.js` | three.js r147 add-ons, MIT |
 
-To refresh them: `node tools/fetch-assets.js`, then
+People are rigged, animated models (walk and idle), each given their own
+height and colours of shirt, trousers, hair and skin; cyclists keep a simpler
+figure, since the models have no cycling pose. Cars are baked per body type
+into one mesh per material, so a street full of them stays fast.
+
+To refresh them: `node tools/fetch-assets.js` and `node tools/fetch-people.js`, then
 `powershell -File tools/shrink-textures.ps1`, then `node tools/pack-assets.js`.
 The textures travel as data URIs inside a script because WebGL refuses
 images loaded from `file://`.
