@@ -273,6 +273,66 @@ var Rules = (function(){
         de:'Beim Abbiegen langsam machen und in die Seitenstrasse schauen, bevor du einbiegst.',
         en:'Slow right down as you turn and look into the side road before you commit.' }
     },
+    fahrstreifen: {
+      pts:10, sev:'minor', law:'§ 2 (2) StVO',
+      title:{ de:'Nicht rechts gefahren', en:'Not keeping to the right' },
+      why:{
+        de:'Du bist über die Mitte in die Gegenfahrbahn geraten. Es gilt das Rechtsfahrgebot: so weit rechts wie möglich.',
+        en:'You drifted over the middle into the oncoming side. The rule is to keep as far right as is practical.' },
+      tip:{
+        de:'Blick weit voraus, nicht auf die Motorhaube – das Auto fährt dorthin, wo du hinschaust.',
+        en:'Look far ahead, not at the bonnet – the car goes where your eyes go.' }
+    },
+    kurve_geschnitten: {
+      pts:15, sev:'minor', law:'§ 9 (1) StVO',
+      title:{ de:'Linkskurve geschnitten', en:'Cut the corner turning left' },
+      why:{
+        de:'Beim Linksabbiegen bist du quer über die Ecke gefahren, auf die Seite des Gegenverkehrs der Strasse, in die du einbiegst.',
+        en:'Turning left you cut across the corner, onto the side of the new street where oncoming traffic waits.' },
+      tip:{
+        de:'Bis zur Mitte der Kreuzung vorfahren, dann in einem runden Bogen rechts der Mitte in die neue Strasse.',
+        en:'Drive on to the middle of the junction, then swing round in a proper arc into the right-hand side of the new street.' }
+    },
+    zu_weit: {
+      pts:10, sev:'minor', law:'§ 9 (1) StVO',
+      title:{ de:'Beim Rechtsabbiegen ausgeholt', en:'Swung wide turning right' },
+      why:{
+        de:'Rechts wird eng abgebogen. Du bist weit nach links ausgeschwenkt und hast dabei die Gegenfahrbahn benutzt.',
+        en:'A right turn is taken tight. You swung out to the left and used the oncoming side.' },
+      tip:{
+        de:'Vorher langsam machen; dann reicht ein kleiner Bogen dicht am rechten Rand.',
+        en:'Slow down first; then a tight arc close to the right edge is enough.' }
+    },
+    einordnen: {
+      pts:5, sev:'minor', law:'§ 9 (1) StVO',
+      title:{ de:'Falsch eingeordnet', en:'Wrong position before turning' },
+      why:{
+        de:'Vor dem Linksabbiegen ordnest du dich zur Mitte hin ein, vor dem Rechtsabbiegen möglichst weit rechts.',
+        en:'Before turning left you move towards the middle of the road; before turning right you keep as far right as you can.' },
+      tip:{
+        de:'Einordnen gehört zum Ablauf: Spiegel – Blinker – einordnen – Schulterblick – abbiegen.',
+        en:'Positioning is part of the sequence: mirror – indicate – position – shoulder check – turn.' }
+    },
+    bordstein: {
+      pts:10, sev:'minor', law:'§ 1 (2) StVO',
+      title:{ de:'Bordstein berührt', en:'Hit the kerb' },
+      why:{
+        de:'Ein Rad war auf dem Bordstein oder dem Gehweg. Dort können Menschen stehen – und der Reifen leidet.',
+        en:'A wheel went onto the kerb or the pavement. People can be standing there – and it is hard on the tyre.' },
+      tip:{
+        de:'Ruhig und rechtzeitig lenken, dorthin schauen, wo du hinwillst. Beim Rechtsabbiegen nicht zu früh einlenken.',
+        en:'Steer smoothly and in good time, looking where you want to go. Turning right, do not steer in too early.' }
+    },
+    falsch_geblinkt: {
+      pts:10, sev:'minor', law:'§ 9 (1) StVO',
+      title:{ de:'Anders gefahren als geblinkt', en:'Drove differently from your indicator' },
+      why:{
+        de:'Dein Blinker hat den anderen etwas anderes angekündigt, als du dann gefahren bist. Wer sich darauf verlässt, gerät in Gefahr.',
+        en:'Your indicator told everyone something other than what you then did. Anyone relying on it was put in danger.' },
+      tip:{
+        de:'Blinken heisst: ich fahre jetzt so. Nicht blinken heisst: ich fahre geradeaus.',
+        en:'Indicating means: this is what I am about to do. No indicator means: I am going straight on.' }
+    },
     schulterblick: {
       pts:15, sev:'minor', law:'§ 9 (1) StVO',
       title:{ de:'Schulterblick vergessen', en:'No shoulder check' },
@@ -456,13 +516,13 @@ var Rules = (function(){
               'gruenpfeil_kein_halt','schulterblick','schulterblick_rad','spiegel','einsatz_blockiert',
               'bus_behindert','kollision','ped_kollision'] },
     { id:'position', de:'Fahrzeugpositionierung', en:'Positioning the car',
-      faults:['haltelinie','kreuzung_blockiert'] },
+      faults:['haltelinie','kreuzung_blockiert','fahrstreifen','kurve_geschnitten','zu_weit','einordnen'] },
     { id:'tempo', de:'Geschwindigkeitsanpassung', en:'Choosing your speed',
       faults:['zu_schnell','kurve_zu_schnell','schritt','vorfahrt_nicht_genutzt'] },
     { id:'kommunikation', de:'Kommunikation', en:'Communicating',
-      faults:['blinker','blinker_kreisel'] },
+      faults:['blinker','blinker_kreisel','falsch_geblinkt'] },
     { id:'bedienung', de:'Fahrzeugbedienung', en:'Handling the car',
-      faults:[] }
+      faults:['bordstein'] }
   ];
   function categoryOf(id){
     for (var i = 0; i < CATEGORIES.length; i++)

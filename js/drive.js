@@ -15,6 +15,9 @@ var Drive = (function(){
   /* rewind: a snapshot of the whole town every half second, the last ~15 s
      kept, and a retry goes back this far before the moment of the fault */
   var SNAP_EVERY = 0.5, SNAP_KEEP = 30, REWIND_BY = 5;
+  /* observation: how far round a head must turn to count as a shoulder
+     check, and how long before the actual turn a look still counts */
+  var LOOK_YAW = 0.6, LOOK_WINDOW = 10, MIRROR_WINDOW = 14;
 
   /* ---------------- the world ---------------- */
   function DriveWorld(opts){
@@ -29,6 +32,8 @@ var Drive = (function(){
       this.sc.title = 'Frankfurt-Eschersheim · Weißer Stein';
       this.sc.en    = 'Frankfurt-Eschersheim · Weißer Stein';
     }
+    /* who steers: you ('manual') or the car along its route ('auto') */
+    this.steer = opts.steer === 'manual' ? 'manual' : 'auto';
     /* an exam: a set time, no help, no stopping to explain */
     this.exam = opts.exam ? { seconds:(opts.exam.minutes || 15)*60 } : null;
     if (this.exam){ this.sc.title = 'Prüfungsfahrt'; this.sc.en = 'Driving test'; }
@@ -145,6 +150,8 @@ var Drive = (function(){
     var st = veh.steps[veh.stepIdx];
     while (st && veh.s > st.exitS + 10 && veh.stepIdx < veh.steps.length - 1){
       if (veh.isPlayer && !veh.faultedHere) this.cleared++;
+      /* the indicator stalk flicks back once the wheel straightens */
+      if (veh.isPlayer && Geo.turnOf(st.from, st.to) !== 'straight') this.indicatorOff = true;
       veh.faultedHere = false;
       veh.stepIdx++;
       veh.didStop = false;
@@ -437,9 +444,15 @@ var Drive = (function(){
     }
     /* where the driver has looked, and when: a glance over a shoulder is
        a head turned well round, the mirror a key press */
+    /* A quick glance counts: the head only has to come round about 35
+       degrees - a tap on the look key gets there, a full turn is not
+       needed. Each new look is flashed up so the driver sees it counted. */
     var seen = this.seen || (this.seen = {});
-    if ((input.yaw || 0) > 0.95)  seen.right = this.t;
-    if ((input.yaw || 0) < -0.95) seen.left  = this.t;
+    var yaw = input.yaw || 0;
+    var look = yaw > LOOK_YAW ? 'right' : yaw < -LOOK_YAW ? 'left' : input.mirror ? 'mirror' : null;
+    if (look && (seen[look] === undefined || this.t - seen[look] > 0.4)) this.lookFlash = { side:look, t:this.t };
+    if (yaw > LOOK_YAW)  seen.right = this.t;
+    if (yaw < -LOOK_YAW) seen.left  = this.t;
     if (input.mirror) seen.mirror = this.t;
     /* the exam is over when the examiner's time is */
     if (this.exam && this.t >= this.exam.seconds){ this.finish('exam_time'); return; }
@@ -455,8 +468,11 @@ var Drive = (function(){
       this.syncStep(veh);
       if (veh.isPlayer) this.drivePlayer(veh, dt, input);
       else this.driveAI(veh, dt);
-      veh.s += veh.v*dt;
-      veh.pos = veh.path.at(veh.s);
+      if (veh.isPlayer && this.steer === 'manual') this.steerPlayer(veh, dt, input);
+      else {
+        veh.s += veh.v*dt;
+        veh.pos = veh.path.at(veh.s);
+      }
       /* patience timer: feeds the deadlock breaker in the rule engine */
       veh.stoppedFor = veh.v < kmh(5) ? (veh.stoppedFor || 0) + dt
                                        : Math.max(0, (veh.stoppedFor || 0) - dt*2.5);
@@ -468,6 +484,8 @@ var Drive = (function(){
     }
 
     this.examine(dt, input);
+    this.checkTurn();
+    if (this.steer === 'manual') this.checkLine(dt);
     if (this.grace > 0) this.grace -= dt; else this.collisions();
     this.speedLimit();
     if ((this.tick = (this.tick || 0) + 1) % 45 === 0) this.cullTraffic();
@@ -482,15 +500,174 @@ var Drive = (function(){
     if (!node){ this.finish('ziel'); return; }
     var route = this.map.buildRoute(node, Geo.opposite(last.to), 40, this.rand);
     if (!route.length){ this.finish('ziel'); return; }
-    var built = this.map.routePath(route);
+    this.adoptPath(p, this.map.routePath(route));
+  };
+  /* Put the player on a freshly built route, where they actually are:
+     the new path overlaps the end of the old one, so find our place on it
+     rather than starting from its beginning (which lies behind us). */
+  DriveWorld.prototype.adoptPath = function(p, built){
+    var at = { x:p.pos.x, y:p.pos.y, h:p.pos.h };
     p.path = built.path;
     p.prof = Sim.curveProfile(p.path);
     p.steps = built.steps;
     p.stepIdx = 0;
-    p.s = 0;
-    p.prevS = 0;
+    var pr = project(p.path, at, 0, p.path.length, 4);
+    p.s = pr.s; p.prevS = pr.s; p.lat = pr.e;
     this.syncStep(p, true);
-    p.pos = p.path.at(0);
+    if (this.steer === 'manual') p.pos = at;          // we steer ourselves: stay put
+    else p.pos = p.path.at(p.s);
+  };
+
+  /* ---------------- steering it yourself ---------------- */
+  /* Where a point lies relative to a path: the nearest s (searched between
+     s0 and s1 in `step`s, then refined) and the signed distance off it,
+     positive to the right of the direction of travel. */
+  function project(path, pt, s0, s1, step){
+    s0 = Math.max(0, s0); s1 = Math.min(path.length, s1);
+    var best = s0, bd = 1e18, s;
+    for (s = s0; s <= s1; s += step){
+      var q = path.at(s), d = (q.x - pt.x)*(q.x - pt.x) + (q.y - pt.y)*(q.y - pt.y);
+      if (d < bd){ bd = d; best = s; }
+    }
+    for (s = Math.max(0, best - step); s <= Math.min(path.length, best + step); s += step/8){
+      var q2 = path.at(s), d2 = (q2.x - pt.x)*(q2.x - pt.x) + (q2.y - pt.y)*(q2.y - pt.y);
+      if (d2 < bd){ bd = d2; best = s; }
+    }
+    var q3 = path.at(best);
+    var e = (pt.x - q3.x)*(-Math.sin(q3.h)) + (pt.y - q3.y)*Math.cos(q3.h);
+    return { s:best, d:Math.sqrt(bd), e:e };
+  }
+  var WHEELBASE = 2.7 * CFG.PPM;
+  /* switch mid-drive: handing the wheel to the car puts it back on its line */
+  DriveWorld.prototype.setSteer = function(mode){
+    var p = this.player;
+    this.steer = mode === 'manual' ? 'manual' : 'auto';
+    p.delta = 0;
+    if (this.steer === 'auto') p.pos = p.path.at(p.s);
+  };
+  /* how far the front wheels may turn at this speed: full lock when slow,
+     much less when fast, so the car cannot be flicked round at 50 */
+  DriveWorld.prototype.maxSteer = function(p){
+    var lat = 8 * CFG.PPM;                           // ~8 m/s² of grip: a car, not a race car
+    return Math.max(0.07, Math.min(0.62, Math.atan(WHEELBASE*lat / Math.max(p.v*p.v, 1))));
+  };
+  /* A kinematic bicycle: the wheels turn toward where the driver steers at
+     a steady rate and centre themselves when let go; the car moves where
+     its wheels point. Afterwards we find ourselves on the route - the way
+     we are meant to go - which is what every rule is judged against. */
+  DriveWorld.prototype.steerPlayer = function(p, dt, input){
+    this.chooseWay(p, input);
+    var max = this.maxSteer(p);
+    var abs = input.steerAbs !== undefined && input.steerAbs !== null;
+    var target = Geo.clamp(abs ? input.steerAbs : (input.steer || 0), -1, 1) * max;
+    var rate = abs ? 3.0 : (target === 0 ? 1.5 : 0.95);
+    p.delta = p.delta || 0;
+    p.delta += Geo.clamp(target - p.delta, -rate*dt, rate*dt);
+    p.delta = Geo.clamp(p.delta, -max, max);
+    var h = p.pos.h + p.v / WHEELBASE * Math.tan(p.delta) * dt;
+    p.pos = { x:p.pos.x + Math.cos(h)*p.v*dt, y:p.pos.y + Math.sin(h)*p.v*dt, h:h };
+    var pr = project(p.path, p.pos, p.s - 30, p.s + 90, 3);
+    if (pr.d < 260){ p.s = pr.s; p.lat = pr.e; }
+    this.keepOnRoad(p, dt);
+  };
+  /* Which way are we going at the next junction? What the indicator says,
+     as other drivers would read it - until we are in the junction; there,
+     whichever street we actually drive into. */
+  DriveWorld.prototype.chooseWay = function(p, input){
+    var st = p.steps[p.stepIdx];
+    if (!st) return;
+    var n = st.node, arms = n.arms;
+    if (p.s < st.junctionS - 30){
+      if (n.layout.type === 'roundabout') return;          // no indicating into a roundabout
+      var ind = input.indicator, want;
+      if (ind === 'left'  && arms.indexOf(Geo.leftOf(st.from))  >= 0) want = Geo.leftOf(st.from);
+      else if (ind === 'right' && arms.indexOf(Geo.rightOf(st.from)) >= 0) want = Geo.rightOf(st.from);
+      else want = st.plan;                                 // no indicator: the planned way, for now
+      if (want !== st.to) this.replan(p, want);
+      return;
+    }
+    if (p.s > st.exitS) return;
+    /* inside: into which street is the car actually going? */
+    for (var i = 0; i < arms.length; i++){
+      var a = arms[i];
+      if (a === st.from) continue;
+      var o = Geo.ARM_VEC[a], q = Geo.rot90cw(o);
+      var dx = p.pos.x - n.x, dy = p.pos.y - n.y;
+      var along = dx*o.x + dy*o.y, across = dx*q.x + dy*q.y;
+      var ring = n.layout.type === 'roundabout';
+      if (along > (ring ? CFG.RING + CFG.BOX + 20 : CFG.BOX + 22) && Math.abs(across) < CFG.BOX + 10){
+        if (a !== st.to){
+          var said = input.indicator, turn = Geo.turnOf(st.from, a);
+          this.replan(p, a);
+          /* said one thing, did another */
+          if (!ring && said !== (turn === 'straight' ? 'off' : turn))
+            this.fault('falsch_geblinkt', null, {
+              de:'Geblinkt: ' + ({ left:'links', right:'rechts', off:'nicht' }[said] || said) + ' – gefahren: ' + ({ left:'links', right:'rechts', straight:'geradeaus' }[turn]) + '.',
+              en:'Indicated: ' + ({ left:'left', right:'right', off:'nothing' }[said] || said) + ' – drove: ' + turn + '.' });
+        }
+        return;
+      }
+    }
+  };
+  /* Rebuild the route from this junction, going `to`; the examiner's plan
+     for this junction is kept so the directions still say what was asked. */
+  DriveWorld.prototype.replan = function(p, to){
+    var st = p.steps[p.stepIdx];
+    var route = [{ node:st.node, from:st.from, to:to, plan:st.plan }];
+    var next = this.map.neighbour(st.node, to);
+    if (next) route = route.concat(this.map.buildRoute(next, Geo.opposite(to), 30, this.rand));
+    var keepS = p.s;
+    this.adoptPath(p, this.map.routePath(route));
+    /* the approach is the same road whichever way we go: stay put on it */
+    void keepS;
+  };
+  /* The kerb and the pavement: touching it is a fault; the car is not
+     going through a house, though - far off the road it stops dead. */
+  DriveWorld.prototype.keepOnRoad = function(p, dt){
+    var c = Math.cos(p.pos.h), s = Math.sin(p.pos.h), hl = p.len*0.42, hw = p.wid*0.45, worst = 0;
+    [[hl, hw], [hl, -hw], [-hl, hw], [-hl, -hw]].forEach(function(k){
+      var x = p.pos.x + c*k[0] - s*k[1], y = p.pos.y + s*k[0] + c*k[1];
+      worst = Math.max(worst, this.map.offRoad(x, y));
+    }, this);
+    p.offRoad = worst;
+    if (worst > 3 && p.v > kmh(2)){
+      this.fault('bordstein', null, { de:'Mit dem Rad über den Bordstein.', en:'A wheel went over the kerb.' });
+      p.v = Math.max(0, p.v - 60*CFG.PPM*dt*(worst > 14 ? 1 : 0.15));   // a knock, or a wall
+    }
+    if (this.map.offRoad(p.pos.x, p.pos.y) > 30) p.v = 0;
+  };
+  /* Where on the road the car is: kept right between junctions, taking a
+     proper line through them, positioned correctly before turning. */
+  var LINE_GRACE = 0.7;
+  DriveWorld.prototype.checkLine = function(dt){
+    var p = this.player, st = p.steps[p.stepIdx];
+    if (!st || p.lat === undefined) return;
+    var turn = Geo.turnOf(st.from, st.to), e = p.lat;
+    var inside = p.s > p.lineS && p.s < st.exitS - 60;
+    var ring = st.node.layout.type === 'roundabout';
+    this.lineT = this.lineT || {};
+    var self = this;
+    function persist(key, bad, id, detail){
+      self.lineT[key] = bad ? (self.lineT[key] || 0) + dt : 0;
+      if (self.lineT[key] > LINE_GRACE && p.v > kmh(3)){ self.fault(id, null, detail); self.lineT[key] = 0; }
+    }
+    /* over the centre line: the left edge of the car half a metre over */
+    var over = -(CFG.HALF - CFG.CAR_W/2) - 6;
+    persist('centre', !inside && !ring && e < over, 'fahrstreifen',
+      { de:'Mit dem Auto über der Mittellinie.', en:'Your car was over the centre line.' });
+    if (inside && !ring && turn === 'left')
+      persist('cut', e < -28, 'kurve_geschnitten', { de:'Die Ecke geschnitten.', en:'You cut the corner.' });
+    if (inside && !ring && turn === 'right')
+      persist('wide', e < -26, 'zu_weit', { de:'Nach links ausgeholt.', en:'You swung out to the left.' });
+  };
+  /* positioning, judged the moment we cross the line into the junction */
+  DriveWorld.prototype.checkPosition = function(){
+    var p = this.player, turn = p.turn();
+    if (this.steer !== 'manual' || p.lat === undefined || p.node.layout.type === 'roundabout') return;
+    if ((turn === 'left' && p.lat > 10) || (turn === 'right' && p.lat < -10))
+      this.fault('einordnen', null, turn === 'left'
+        ? { de:'Vor dem Linksabbiegen nicht zur Mitte eingeordnet.', en:'You did not move towards the middle before turning left.' }
+        : { de:'Vor dem Rechtsabbiegen nicht rechts eingeordnet.', en:'You did not keep right before turning right.' });
   };
 
   /* The limit belongs to the street you are on, and a new one starts at
@@ -609,6 +786,7 @@ var Drive = (function(){
       var d = Rules.FAULTS[x.id]; return d && d.sev === 'major';
     }).length;
     this.fixed.push(f);
+    this.turnWatch = null;                 // that turn has not happened yet
     this.pending = null;
     this.paused = false;
     this.crashPoint = null;
@@ -618,21 +796,34 @@ var Drive = (function(){
   };
 
   /* ---------------- observation: mirror and shoulder ---------------- */
-  /* Checked as you commit to a turn. The shoulder check must come in the
-     last few seconds before it; the mirror a little earlier is fine. */
+  /* Judged when you actually turn in - not at the stop line. A shoulder
+     check belongs right before the turn itself, which is often after you
+     have rolled past the line or waited there for people to cross; any
+     look in the last LOOK_WINDOW seconds before that moment counts. */
   DriveWorld.prototype.checkEntry = function(){
     Sim.World.prototype.checkEntry.call(this);
+    this.checkPosition();
     var p = this.player, turn = p.turn(), n = p.node;
-    if ((turn !== 'left' && turn !== 'right') || n.layout.type === 'roundabout') return;
+    if ((turn !== 'left' && turn !== 'right') || n.layout.type === 'roundabout'){ this.turnWatch = null; return; }
+    this.turnWatch = { side:turn, step:p.stepIdx, node:n, fromArm:p.fromArm,
+                       at: p.exitCrossS !== undefined ? p.exitCrossS : p.junctionS + 60 };
+  };
+  DriveWorld.prototype.checkTurn = function(){
+    var w = this.turnWatch, p = this.player;
+    if (!w) return;
+    var moved = p.stepIdx !== w.step;
+    if (!moved && p.s < w.at) return;
+    this.turnWatch = null;
     var seen = this.seen || {};
-    var looked = seen[turn] !== undefined && this.t - seen[turn] < 6;
-    var mirrored = seen.mirror !== undefined && this.t - seen.mirror < 10;
-    var side = turn === 'right' ? { de:'rechts', en:'right' } : { de:'links', en:'left' };
+    var looked = seen[w.side] !== undefined && this.t - seen[w.side] < LOOK_WINDOW;
+    var mirrored = seen.mirror !== undefined && this.t - seen.mirror < MIRROR_WINDOW;
+    var side = w.side === 'right' ? { de:'rechts', en:'right' } : { de:'links', en:'left' };
+    var key = w.side === 'right' ? 'E' : 'Q';
     if (!looked){
-      var cycle = this.cyclePathAcross(n, p.fromArm, turn);
+      var cycle = this.cyclePathAcross(w.node, w.fromArm, w.side);
       this.fault(cycle ? 'schulterblick_rad' : 'schulterblick', null,
-        { de:'Beim Abbiegen nach ' + side.de + ' kein Blick über die ' + side.de + 'e Schulter.',
-          en:'You turned ' + side.en + ' without looking over your ' + side.en + ' shoulder.' });
+        { de:'Beim Abbiegen nach ' + side.de + ' kein Blick über die ' + side.de + 'e Schulter (Taste ' + key + ') in den letzten ' + LOOK_WINDOW + ' Sekunden davor.',
+          en:'You turned ' + side.en + ' without looking over your ' + side.en + ' shoulder (key ' + key + ') in the ' + LOOK_WINDOW + ' seconds before.' });
     } else if (!mirrored){
       this.fault('spiegel');
     }
@@ -701,11 +892,12 @@ var Drive = (function(){
     if (!p.steps || !p.steps[p.stepIdx]) return null;
     var st = p.steps[p.stepIdx];
     var dist = Math.max(0, (st.junctionS - p.s) / CFG.PPM);
-    var turn = Geo.turnOf(st.from, st.to);
+    var plan = st.plan || st.to;                  // what the examiner asked for
+    var turn = Geo.turnOf(st.from, plan);
     var far = dist > 60;
     var where = far ? { de:'In ' + Math.round(dist/10)*10 + ' Metern', en:'In ' + Math.round(dist/10)*10 + ' metres' }
                     : { de:'Jetzt', en:'Now' };
-    var onto = this.map.streetName(st.node, st.to);
+    var onto = this.map.streetName(st.node, plan);
     var what = turn === 'left'  ? { de:'links abbiegen auf die ' + onto, en:'turn left onto ' + onto }
              : turn === 'right' ? { de:'rechts abbiegen auf die ' + onto, en:'turn right onto ' + onto }
              : { de:'geradeaus weiter auf der ' + onto, en:'carry straight on along ' + onto };

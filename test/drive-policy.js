@@ -22,7 +22,9 @@ module.exports = function(ctx){
     const turning = (turn === 'left' || turn === 'right') && !roundabout;
     const waiting = p.s < p.lineS && p.s > p.lineS - 130 && p.v < kmh(4);
     input.mirror = turning && ((p.s > p.lineS - 320 && p.s < p.lineS - 150) || waiting);
-    input.yaw = turning && ((p.s > p.lineS - 110 && p.s < p.lineS - 15) || waiting)
+    /* ...and once more if we are held up after the line, just before we turn in */
+    const heldInside = p.s >= p.lineS && p.exitCrossS !== undefined && p.s < p.exitCrossS && p.v < kmh(6);
+    input.yaw = turning && ((p.s > p.lineS - 110 && p.s < p.lineS - 15) || waiting || heldInside)
               ? (turn === 'right' ? 1.1 : -1.1) : 0;
 
     const sign = Rules.signOf(J, p.fromArm);

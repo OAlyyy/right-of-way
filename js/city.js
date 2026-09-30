@@ -22,6 +22,7 @@ var City = (function(){
   var CW    = { in:55, out:73, mid:64 };   // pedestrian crossing band (1.5 m)
   var BIKE  = { off:79, half:6, V:18 };    // cycle path: centre off the road's centre line
   var HOLD  = CFG.BOX + 49;                // where a car's front stops: behind both
+  var CORNER_R = 48;                       // kerb radius at a street corner (4 m)
 
   /* deterministic RNG so a seed always rebuilds the same town */
   function rng(seed){
@@ -281,6 +282,44 @@ var City = (function(){
     };
   }
 
+  /* How far a point is outside the carriageway (world units), 0 on it.
+     The town's streets are the grid lines, each BOX either side, running
+     between the outermost junctions; a roundabout's island is not road. */
+  Map.prototype.offRoad = function(x, y){
+    var S = SPACING, c0 = -(this.cols-1)/2*S, r0 = -(this.rows-1)/2*S, i, best = 1e9;
+    for (i = 0; i < this.nodes.length; i++){
+      var n = this.nodes[i];
+      if (n.layout.type !== 'roundabout') continue;
+      var rr = Math.hypot(x - n.x, y - n.y);
+      if (rr < CFG.RING - CFG.BOX) return CFG.RING - CFG.BOX - rr;          // on the island
+      if (rr <= CFG.RING + CFG.BOX) return 0;                             // on the ring
+    }
+    /* a junction's corners are rounded, as kerbs are: inside the curve
+       between two streets is still road */
+    var nc = Geo.clamp(Math.round((x - c0)/S), 0, this.cols-1), nr = Geo.clamp(Math.round((y - r0)/S), 0, this.rows-1);
+    var nn = this.nodeAt(nc, nr);
+    if (nn && nn.layout.type !== 'roundabout'){
+      var ax = Math.abs(x - nn.x), ay = Math.abs(y - nn.y), R = CORNER_R, B = CFG.BOX;
+      if (ax > B && ay > B && ax < B + R && ay < B + R &&
+          nn.arms.indexOf(x > nn.x ? 'E' : 'W') >= 0 && nn.arms.indexOf(y > nn.y ? 'S' : 'N') >= 0){
+        var fd = R - Math.hypot(B + R - ax, B + R - ay);
+        if (fd >= 0) return 0;
+      }
+    }
+    /* the outermost junctions' boxes are road right to their far edge */
+    var xMin = c0 - CFG.BOX, xMax = c0 + (this.cols-1)*S + CFG.BOX;
+    var yMin = r0 - CFG.BOX, yMax = r0 + (this.rows-1)*S + CFG.BOX;
+    /* along a row street */
+    var ry = Math.round((y - r0)/S), rowY = r0 + Geo.clamp(ry, 0, this.rows-1)*S;
+    var dxRow = Math.max(0, xMin - x, x - xMax);
+    best = Math.min(best, Math.max(0, Math.abs(y - rowY) - CFG.BOX) + dxRow);
+    /* along a column street */
+    var cx = Math.round((x - c0)/S), colX = c0 + Geo.clamp(cx, 0, this.cols-1)*S;
+    var dyCol = Math.max(0, yMin - y, y - yMax);
+    best = Math.min(best, Math.max(0, Math.abs(x - colX) - CFG.BOX) + dyCol);
+    return best;
+  };
+
   Map.prototype.neighbour = function(node, arm){
     var d = { N:[0,-1], S:[0,1], E:[1,0], W:[-1,0] }[arm];
     return this.nodeAt(node.c + d[0], node.r + d[1]);
@@ -366,7 +405,9 @@ var City = (function(){
         var q = path.at(t);
         if (Math.hypot(q.x - n.x, q.y - n.y) <= holdR){ jS = t; break; }
       }
-      return { node:n, from:m.step.from, to:m.step.to,
+      /* `plan` is the way the examiner wants you to go here; `to` the way
+         you are actually going - they part when you choose otherwise */
+      return { node:n, from:m.step.from, to:m.step.to, plan:m.step.plan || m.step.to,
                enterS:enterS, exitS:exitS, junctionS:jS };
     });
     return { path:path, steps:steps };
@@ -458,7 +499,7 @@ var City = (function(){
   }
 
   return {
-    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK, RAIL:RAIL, CW:CW, BIKE:BIKE, HOLD:HOLD,
+    SPACING:SPACING, ENTRY:ENTRY, LINK:LINK, RAIL:RAIL, CW:CW, BIKE:BIKE, HOLD:HOLD, CORNER_R:CORNER_R,
     Map:Map, junctionPiece:junctionPiece,
     localConflict:localConflict, buildConflictTable:buildConflictTable,
     railConflict:railConflict, bikeConflict:bikeConflict,

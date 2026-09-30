@@ -54,7 +54,10 @@ watches — speed, indicators, and above all who goes first.
 |---|---|
 | `W` / `↑` | accelerate |
 | `S` / `↓` / `Space` | brake |
-| `Q` / `E` (or `←` / `→`) | **look left / right** — hold it |
+| `←` / `→` | **steer** (free drive and test; in lessons: look) |
+| `Q` / `E` | **look left / right** — hold it |
+| `M` | check the mirror |
+| `L` | steer yourself / let the car steer |
 | `A` / `D` | indicator left / right (toggles) |
 | `V` | switch driver view ⇄ map view |
 | `H` | instructor hints on / off |
@@ -134,6 +137,19 @@ now watches **where you look**: hold `Q` / `E` to look over your shoulder and
 `M` (or the MIRROR button) to check the rear-view mirror, which the 3D view
 shows at the top of the windscreen. Turning without a shoulder check is a
 fault - across a cycle path it is a fail, as in the real test.
+
+**You steer.** In free drive and the test the car no longer follows its
+route by itself: `←` / `→` (or drag the road on a touch screen) turn the
+wheel, which centres itself when you let go, and the faster you go the less
+it turns. Your indicator tells the town - and the route - which way you mean
+to go at the next junction; drive into another street and the game follows
+you there, while the examiner's directions stay what they were. The line you
+take is judged: over the centre line (§ 2 keep right), cutting a left turn,
+swinging wide on a right, not positioning before a turn, clipping the kerb
+(corners are rounded, 4 m, as real ones are), or driving against your own
+indicator. The blue chevrons on the road show the proper line. `L` (or the
+"Steering" button) hands the wheel back to the car; lessons always steer for
+you, since their timing is built around the route.
 
 **Take the test** runs a 15-minute exam on the Frankfurt map. The examiner
 gives directions out loud, in German ("An der nächsten Kreuzung bitte rechts
@@ -287,6 +303,8 @@ node test/rewind-check.js        # break a rule, rewind, retry: the town restore
 node test/tram-check.js          # Frankfurt map: trains run, get priority, nobody is falsely accused
 node test/street-check.js        # people and cyclists: nobody run down, turning blind gets booked
 node test/exam-check.js          # the test: careful driving passes, not looking or speeding fails
+node test/shoulder-check.js      # quick glances count; missing or stale ones are booked
+node test/steer-check.js         # steering yourself: a good line is clean, line faults are booked
 ```
 
 `harness.js` is the useful one for the lessons. It drives each lesson twice —

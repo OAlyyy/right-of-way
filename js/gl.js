@@ -359,13 +359,51 @@ var GL3D = (function(){
       L.arms.forEach(function(arm){ armFlat(road, arm, B, -B, reach, B, ox, oy, 0.03, TILE.asphalt); });
     }
 
+    /* rounded corners in town: asphalt fills the curve between two streets
+       and the kerb follows it, 4 m radius - the same shape the examiner's
+       kerb check uses (City.Map.offRoad) */
+    var R = City.CORNER_R, fillet = {};
+    if (city && !ring){
+      [['N','E'], ['E','S'], ['S','W'], ['W','N']].forEach(function(pr){
+        if (L.arms.indexOf(pr[0]) < 0 || L.arms.indexOf(pr[1]) < 0) return;
+        fillet[pr[0] + pr[1]] = fillet[pr[1] + pr[0]] = true;
+        var a = Geo.ARM_VEC[pr[0]], b = Geo.ARM_VEC[pr[1]];
+        var cx = ox + (a.x + b.x)*(B + R), cy = oy + (a.y + b.y)*(B + R);
+        var px = ox + (a.x + b.x)*B, py = oy + (a.y + b.y)*B;
+        var N = 9, prev = null;
+        for (var k = 0; k <= N; k++){
+          var t = k/N*Math.PI/2;
+          var dx = -b.x*Math.cos(t) - a.x*Math.sin(t), dy = -b.y*Math.cos(t) - a.y*Math.sin(t);
+          var pt = { x:cx + dx*R, y:cy + dy*R, dx:dx, dy:dy };
+          if (prev){
+            road.tri([px*U, 0.03, py*U], [prev.x*U, 0.03, prev.y*U], [pt.x*U, 0.03, pt.y*U], [0,1,0], [[0,0],[1,0],[0,1]]);
+            /* the kerb's face towards the road, and its top */
+            var nx = -(prev.dx + pt.dx)/2, ny = -(prev.dy + pt.dy)/2;
+            kerb.quad([prev.x*U, 0, prev.y*U], [pt.x*U, 0, pt.y*U], [pt.x*U, KERB_H, pt.y*U], [prev.x*U, KERB_H, prev.y*U],
+                      [nx, 0, ny], [[0,0],[1,0],[1,1],[0,1]]);
+            var ix0 = cx + prev.dx*(R - KERB_W), iy0 = cy + prev.dy*(R - KERB_W);
+            var ix1 = cx + pt.dx*(R - KERB_W), iy1 = cy + pt.dy*(R - KERB_W);
+            kerb.quad([prev.x*U, KERB_H, prev.y*U], [pt.x*U, KERB_H, pt.y*U], [ix1*U, KERB_H, iy1*U], [ix0*U, KERB_H, iy0*U],
+                      [0,1,0], [[0,0],[1,0],[1,1],[0,1]]);
+          }
+          prev = pt;
+        }
+      });
+    }
+
     /* kerbs: along both sides of every arm, across the mouth of any arm
        that is missing (a T-junction), and not across the U-Bahn's bed */
     Geo.ARM_ORDER.forEach(function(arm){
       var has = L.arms.indexOf(arm) >= 0;
-      var start = ring ? CFG.RING + B + 10 : B;
       if (has){
         [-1, 1].forEach(function(side){
+          /* which street lies on this side of the arm - if it is there,
+             the corner between them is rounded and the kerb starts after it */
+          var q = Geo.rot90cw(Geo.ARM_VEC[arm]);
+          var sideArm = Geo.ARM_ORDER.filter(function(a2){
+            return Geo.ARM_VEC[a2].x === q.x*side && Geo.ARM_VEC[a2].y === q.y*side;
+          })[0];
+          var start = ring ? CFG.RING + B + 10 : (fillet[arm + sideArm] ? B + R : B);
           var lat0 = side*B, lat1 = side*(B + KERB_W);
           if (sc.rail && arm === sc.rail.side){
             armBox(kerb, arm, start, lat0, City.RAIL.bed[0] - 2, lat1, ox, oy, 0, KERB_H);
@@ -1066,10 +1104,22 @@ var GL3D = (function(){
     });
     part(new THREE.BoxGeometry(1.4, 0.04, W*0.84), VMs.dash, -L*0.11, 1.41, 0, car);
     part(new THREE.BoxGeometry(0.04, 0.07, 0.26), VMs.dash, L*0.045, 1.31, 0, car);     // mirror
-    var wheel = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.018, 10, 36), VMs.dash);
-    wheel.position.set(L*0.085, 0.87, -W*0.20);
-    wheel.rotation.y = Math.PI/2; wheel.rotation.x = 0; wheel.rotateX(-0.45);
-    car.add(wheel);
+    /* the steering wheel: a rim and three spokes, turning as you steer */
+    var column = new THREE.Group();
+    column.position.set(L*0.085, 0.87, -W*0.20);
+    column.rotation.y = Math.PI/2; column.rotateX(-0.45);
+    var wheel = new THREE.Group();
+    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.018, 10, 36), VMs.dash));
+    [Math.PI/2, Math.PI*7/6, Math.PI*11/6].forEach(function(a){
+      var spoke = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.024, 0.012), VMs.dash);
+      spoke.position.set(Math.cos(a)*0.085, Math.sin(a)*0.085, 0);
+      spoke.rotation.z = a;
+      wheel.add(spoke);
+    });
+    wheel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.03, 16).rotateX(Math.PI/2), VMs.dash));
+    column.add(wheel);
+    car.add(column);
+    car.userData.steeringWheel = wheel;
   }
 
   function vehicleMesh(v){
@@ -1093,7 +1143,12 @@ var GL3D = (function(){
       var g = vehicleMesh(v);
       g.position.set(v.pos.x*U, 0, v.pos.y*U);
       g.rotation.y = -v.pos.h;
-      (g.userData.wheels || []).forEach(function(w){ w.children[0] && (w.rotation.z = -(v.s*U)/0.33); });
+      (g.userData.wheels || []).forEach(function(w, k){
+        if (w.children[0]) w.rotation.z = -(v.s*U)/0.33;
+        /* the front pair turns with the steering (a car's first two wheels) */
+        if (k < 2 && v.kind !== 'bike') w.rotation.y = -(v.delta || 0);
+      });
+      if (g.userData.steeringWheel) g.userData.steeringWheel.rotation.z = -(v.delta || 0) * 14;
       /* a cyclist pedals while moving */
       if (g.userData.rider){
         var ph = v.s*U*1.6;

@@ -57,6 +57,8 @@
   };
   var input = { throttle:false, brake:false, indicator:'off' };
   var look  = { left:false, right:false, mirror:false };
+  var wheelKeys = { left:false, right:false };
+  var STEER = 'fahrschule.steer.v1';
 
   function el(id){ return document.getElementById(id); }
   function show(id, on){ el(id).classList.toggle('hidden', !on); }
@@ -109,6 +111,7 @@
     var l = I18N.get();
     document.documentElement.setAttribute('lang', l);
     el('btn-lang').textContent = I18N.t('lang.next');
+    if (state.steer) applySteerLabel();
     el('btn-theme').textContent = I18N.t(isDark() ? 'theme.day' : 'theme.night');
     el('menu-h1').innerHTML   = I18N.t('menu.h1');
     el('menu-lead').innerHTML = I18N.t('menu.lead');
@@ -292,7 +295,9 @@
     var seed = Math.floor(Math.random()*100000);
     state.world = new Drive.DriveWorld({ seed:seed, cols:6, rows:5, target:1e9,
       preset: state.driveMap === 'random' ? null : 'eschersheim',
-      exam: exam ? { minutes:EXAM_MINUTES } : null });
+      exam: exam ? { minutes:EXAM_MINUTES } : null,
+      steer: state.steer });
+    wheelKeys.left = wheelKeys.right = false; input.steer = 0; input.steerAbs = null; state.wheel = null;
     state.spoken = null;
     input.throttle = false; input.brake = false; input.indicator = 'off';
     look.left = false; look.right = false; look.mirror = false;
@@ -475,6 +480,9 @@
     /* the examiner sees where you look: head turned, mirror checked */
     input.yaw = state.yaw;
     input.mirror = look.mirror;
+    input.steer = (wheelKeys.right ? 1 : 0) - (wheelKeys.left ? 1 : 0);
+    /* the indicator stalk flicks back after a turn, as in a real car */
+    if (state.world.indicatorOff){ input.indicator = 'off'; state.world.indicatorOff = false; }
     state.world.update(dt, input);
     if (state.world.exam) examiner(state.world);
     updateHud();
@@ -508,7 +516,8 @@
     var dist = (st.junctionS - p.s) / CFG.PPM;
     if (state.spoken === key || dist > 75 || dist < 5) return;
     state.spoken = key;
-    var turn = Geo.turnOf(st.from, st.to), street = w.map.streetName(st.node, st.to);
+    var plan = st.plan || st.to;
+    var turn = Geo.turnOf(st.from, plan), street = w.map.streetName(st.node, plan);
     var text;
     if (st.node.layout.type === 'roundabout')
       text = 'Im Kreisverkehr bitte die ' + ORD[turn] + ' Ausfahrt nehmen.';
@@ -589,6 +598,12 @@
 
     /* nobody whispers the answers in an exam */
     var h = state.hints && !w.exam ? I18N.pick(w.hint()) : '';
+    /* a look just registered: say so, briefly - you should know it counted */
+    var lf = w.lookFlash;
+    if (lf && w.t - lf.t < 1.2)
+      h = I18N.pick(lf.side === 'mirror' ? { de:'✓ Spiegel', en:'✓ Mirror checked' }
+          : lf.side === 'right' ? { de:'✓ Schulterblick rechts', en:'✓ Shoulder check right' }
+          : { de:'✓ Schulterblick links', en:'✓ Shoulder check left' });
     /* after a rewind, always say what you are retrying and how to get it right */
     if (w.hold){
       var fd = Rules.FAULTS[w.hold.fault.id];
@@ -762,6 +777,18 @@
     input.indicator = (input.indicator === dir) ? 'off' : dir;
     if (state.world) updateHud();
   }
+  /* who steers in free drive and the test: you, or the car */
+  function toggleSteer(){
+    state.steer = state.steer === 'manual' ? 'auto' : 'manual';
+    save(STEER, state.steer);
+    if (state.mode === 'drive' && state.world) state.world.setSteer(state.steer);
+    wheelKeys.left = wheelKeys.right = false; input.steerAbs = null;
+    applySteerLabel();
+  }
+  function applySteerLabel(){
+    el('btn-steer').textContent = I18N.t(state.steer === 'manual' ? 'steer.manual' : 'steer.auto');
+    el('btn-steer').classList.toggle('off', state.steer !== 'manual');
+  }
   function setHints(on){
     state.hints = on;
     el('btn-hints').classList.toggle('off', !on);
@@ -802,8 +829,13 @@
     if (e.repeat && k === ' ' && state.world && state.world.hold) return;
     if (k === 'w' || k === 'arrowup')   { input.throttle = true; el('pedal-gas').classList.add('down'); }
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = true; el('pedal-brake').classList.add('down'); }
-    if (k === 'q' || k === 'arrowleft')  look.left = true;
-    if (k === 'e' || k === 'arrowright') look.right = true;
+    /* the arrows steer when you drive yourself; Q / E always turn your head */
+    var steer = steeringByHand();
+    if (k === 'q' || (k === 'arrowleft' && !steer))  look.left = true;
+    if (k === 'e' || (k === 'arrowright' && !steer)) look.right = true;
+    if (k === 'arrowleft' && steer)  wheelKeys.left = true;
+    if (k === 'arrowright' && steer) wheelKeys.right = true;
+    if (k === 'l'){ toggleSteer(); return; }
     if (k === 'm') look.mirror = true;
     if (k === 'a') setIndicator('left');
     if (k === 'd') setIndicator('right');
@@ -816,6 +848,8 @@
     if (k === 's' || k === 'arrowdown' || k === ' '){ input.brake = false; el('pedal-brake').classList.remove('down'); }
     if (k === 'q' || k === 'arrowleft')  look.left = false;
     if (k === 'e' || k === 'arrowright') look.right = false;
+    if (k === 'arrowleft')  wheelKeys.left = false;
+    if (k === 'arrowright') wheelKeys.right = false;
     if (k === 'm') look.mirror = false;
   });
   window.addEventListener('blur', function(){
@@ -843,19 +877,36 @@
     n.addEventListener('contextmenu', function(e){ e.preventDefault(); });
   }
 
-  /* drag across the road to look around, like turning your head */
+  /* Drag across the road: when you steer yourself, that is the wheel
+     (sideways from where you touched, let go and it centres); otherwise
+     it turns your head, as before. */
+  function steeringByHand(){
+    return state.mode === 'drive' && state.world && state.world.steer === 'manual';
+  }
   function initDragLook(){
     canvas.addEventListener('pointerdown', function(e){
-      if (state.screen !== 'play' || state.view !== 'pov') return;
+      if (state.screen !== 'play') return;
+      if (steeringByHand()){
+        state.wheel = { id:e.pointerId, x:e.clientX };
+        input.steerAbs = 0;
+        try { canvas.setPointerCapture(e.pointerId); } catch(err){}
+        return;
+      }
+      if (state.view !== 'pov') return;
       state.drag = { id:e.pointerId, x:e.clientX, yaw:state.yawTarget };
       try { canvas.setPointerCapture(e.pointerId); } catch(err){}
     });
     canvas.addEventListener('pointermove', function(e){
+      if (state.wheel && e.pointerId === state.wheel.id){
+        input.steerAbs = Geo.clamp((e.clientX - state.wheel.x) / Math.max(120, W*0.28), -1, 1);
+        return;
+      }
       if (!state.drag || e.pointerId !== state.drag.id) return;
       var dx = e.clientX - state.drag.x;
       state.yawTarget = Geo.clamp(state.drag.yaw - dx/Math.max(160, W*0.42), -MAX_YAW, MAX_YAW);
     });
     function release(e){
+      if (state.wheel && (!e || e.pointerId === state.wheel.id)){ state.wheel = null; input.steerAbs = null; return; }
       if (!state.drag || (e && e.pointerId !== state.drag.id)) return;
       state.drag = null;
       state.yawTarget = 0;
@@ -906,6 +957,9 @@
     el('btn-ref').onclick   = function(){ buildReference(); show('overlay-ref', true); };
     el('btn-ref-close').onclick = function(){ show('overlay-ref', false); };
     el('btn-hints').onclick = function(){ setHints(!state.hints); };
+    state.steer = load(STEER, 'manual') === 'auto' ? 'auto' : 'manual';
+    applySteerLabel();
+    el('btn-steer').onclick = toggleSteer;
     el('ind-l').onclick = function(){ setIndicator('left'); };
     el('ind-r').onclick = function(){ setIndicator('right'); };
     el('btn-lang').onclick = function(){
