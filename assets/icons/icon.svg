@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2A2620"/><stop offset="1" stop-color="#0E0C09"/>
+    </linearGradient>
+    <linearGradient id="yel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFD940"/><stop offset="1" stop-color="#F0B400"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E4E0D6"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity=".5"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Zeichen 306, Vorfahrtstraße: the sign that says "you have priority" -->
+  <g transform="rotate(45 256 256)" filter="url(#sh)">
+    <rect x="130" y="130" width="252" height="252" rx="26" fill="#14120E"/>
+    <rect x="136" y="136" width="240" height="240" rx="21" fill="url(#rim)"/>
+    <rect x="172" y="172" width="168" height="168" rx="9" fill="url(#yel)"/>
+  </g>
+</svg>

@@ -25,6 +25,13 @@ const title    = (html.match(/<title>([\s\S]*?)<\/title>/) || [,'Kreuzungstraine
 const fontLink = (html.match(/<link rel="stylesheet" href="https:\/\/fonts[^>]*>/) || [''])[0];
 const preconn  = [...html.matchAll(/<link rel="preconnect"[^>]*>/g)].map(m => m[0]).join('\n');
 
+/* the icons travel inside the single file, so "Add to Home Screen" and the
+   browser tab still show them when it is opened from disk */
+const b64 = f => fs.readFileSync(path.join(root, f)).toString('base64');
+const icons =
+  '<link rel="apple-touch-icon" href="data:image/png;base64,' + b64('assets/icons/apple-touch-icon.png') + '">\n' +
+  '<link rel="icon" href="data:image/png;base64,' + b64('assets/icons/favicon-32.png') + '" sizes="32x32" type="image/png">';
+
 /* everything between <body> and the first script tag */
 let body = html.split(/<body>/)[1].split(/<script src=/)[0];
 body = body.replace(/\s*$/, '');
@@ -38,6 +45,11 @@ const standalone = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#131210">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kreuzung">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+${icons}
 <title>${title}</title>
 ${preconn}
 ${fontLink}

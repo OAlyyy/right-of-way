@@ -983,20 +983,45 @@
 
   /* press-and-hold buttons (mouse, touch and pen in one path) */
   function hold(id, onDown, onUp){
-    var n = el(id);
+    var n = el(id), pid = null;
     function down(e){
       e.preventDefault();
+      pid = e.pointerId;
       if (n.setPointerCapture && e.pointerId !== undefined){
         try { n.setPointerCapture(e.pointerId); } catch(err){}
       }
       onDown(); n.classList.add('down');
     }
-    function up(e){ if (e) e.preventDefault(); onUp(); n.classList.remove('down'); }
+    function up(e){ if (e && e.cancelable) e.preventDefault(); pid = null; onUp(); n.classList.remove('down'); }
     n.addEventListener('pointerdown', down);
     n.addEventListener('pointerup', up);
     n.addEventListener('pointercancel', up);
     n.addEventListener('lostpointercapture', up);
     n.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+    /* iOS, above all inside another app's frame, sometimes loses the
+       button's pointerup and the pedal sticks down. Back-ups: the same
+       finger lifting anywhere, and the touch list no longer holding a
+       finger on (or near) the button. */
+    function held(){ return pid !== null || n.classList.contains('down'); }
+    function release(){ if (held()) up(); }
+    window.addEventListener('pointerup', function(e){ if (e.pointerId === pid) release(); }, true);
+    window.addEventListener('pointercancel', function(e){ if (e.pointerId === pid) release(); }, true);
+    function touchesGone(e){
+      if (!held()) return;
+      var r = n.getBoundingClientRect(), pad = 48;
+      for (var i = 0; i < e.touches.length; i++){
+        var t = e.touches[i];
+        if (t.clientX > r.left - pad && t.clientX < r.right + pad &&
+            t.clientY > r.top - pad  && t.clientY < r.bottom + pad) return;
+      }
+      release();
+    }
+    document.addEventListener('touchend', touchesGone, { passive:true, capture:true });
+    document.addEventListener('touchcancel', touchesGone, { passive:true, capture:true });
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) release(); });
+    window.addEventListener('pagehide', release);
+    window.addEventListener('blur', release);
   }
 
   /* Drag across the road: when you steer yourself, that is the wheel
