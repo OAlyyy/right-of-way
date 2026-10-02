@@ -456,7 +456,8 @@ kbd{
 .panel{
   width:100%; max-width:600px; max-height:100%; overflow:auto;
   background:var(--surface); border:1px solid var(--line);
-  border-radius:var(--radius); padding:22px 24px;
+  --pad-x:24px; --pad-y:22px;
+  border-radius:var(--radius); padding:var(--pad-y) var(--pad-x);
   box-shadow:0 20px 50px var(--shadow);
   display:flex; flex-direction:column; gap:16px;
 }
@@ -585,8 +586,13 @@ kbd{
 }
 @media (max-width:560px){
   #topbar{ padding-top:max(8px, env(safe-area-inset-top)); }
-  .brand-txt{ font-size:13px; }
-  .brand-txt .long{ display:none; }
+  /* the logo alone carries the brand; the four nav buttons need the width */
+  #topbar{ padding-left:max(12px, env(safe-area-inset-left)); padding-right:max(8px, env(safe-area-inset-right)); gap:8px; }
+  .brand-txt{ display:none; }
+  .logo{ width:22px; height:22px; margin-left:3px; }
+  nav{ gap:0; flex:0 1 auto; min-width:0; overflow-x:auto; scrollbar-width:none; }
+  nav::-webkit-scrollbar{ display:none; }
+  button.nav{ padding:7px 6px; font-size:13px; letter-spacing:.01em; white-space:nowrap; }
   #hud{ padding:9px 10px 0; gap:7px; }
   .gauge{ padding:4px 10px 5px; }
   #hud-speed{ font-size:22px; }
@@ -599,7 +605,7 @@ kbd{
   .look{ width:56px; height:72px; }
   #minimap{ width:124px; height:124px; }
   #hud-hint{ font-size:13px; padding:8px 12px; bottom:calc(104px + env(safe-area-inset-bottom)); }
-  .panel{ padding:17px 16px; border-radius:var(--radius-sm); gap:13px; }
+  .panel{ --pad-x:16px; --pad-y:17px; border-radius:var(--radius-sm); gap:13px; }
   .panel h2{ font-size:19px; }
   .res-buttons > *{ flex:1 1 auto; }
   .menu-inner{ padding-block:24px 48px; }
@@ -620,6 +626,34 @@ kbd{
 @media (hover:none) and (pointer:coarse){
   #brief-keys{ display:none; }
   .primary small, .pedal small{ display:none; }
+
+  /* long briefings and debriefs scroll; keep their buttons pinned to the
+     bottom of the card so Start / Next never hide below the fold */
+  .panel > #btn-start,
+  .panel > .res-buttons{
+    position:sticky; bottom:calc(-1 * var(--pad-y)); z-index:1;
+    margin:0 calc(-1 * var(--pad-x)) calc(-1 * var(--pad-y));
+    padding:12px var(--pad-x) 14px;
+    background:var(--surface);
+    border-top:1px solid var(--line);
+  }
+  .panel > #btn-start{
+    width:auto; padding-top:14px; padding-bottom:14px;
+    background:var(--accent); border:none;
+    border-radius:0 0 var(--radius-sm) var(--radius-sm);
+  }
+  /* overlays: a little less padding so the card gets more of the screen */
+  .overlay{ padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+                    max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+
+  /* inside another app's frame: the host already keeps us clear of the
+     notch, and part of the frame may be off screen (see index.html) */
+  :root.framed body{
+    height:calc(100dvh - var(--hide-t, 0px) - var(--hide-b, 0px));
+    margin-top:var(--hide-t, 0px);
+  }
+  :root.framed #topbar{ padding-top:8px; }
+  :root.framed .overlay{ padding-top:10px; }
 }
 
 @media (prefers-reduced-motion:reduce){
@@ -628,6 +662,57 @@ kbd{
 
 </style>
 
+<script>/* Opened inside another app's frame on a phone (e.g. a preview sheet)?
+   The frame can be taller than what is on screen, cutting off the pedals.
+   Measure the part that is really visible and fit the game into it
+   (style.css reads --hide-t / --hide-b under :root.framed). */
+(function(){
+  var root = document.documentElement, framed;
+  try { framed = window.self !== window.top; } catch (e) { framed = true; }
+  if (!framed) return;
+  root.classList.add('framed');
+  if (!matchMedia('(hover:none) and (pointer:coarse)').matches) return;
+
+  var seen = { t:0, b:0 }, cur = { t:-1, b:-1 };
+  function apply(){
+    /* fallback guess: the host's own header (~128px) sits above the frame,
+       so a frame taller than the rest of the screen runs off the bottom */
+    var land = innerWidth > innerHeight;
+    var sh = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+    var guess = Math.max(0, innerHeight - (sh - 128));
+    var t = Math.round(seen.t), b = Math.round(Math.max(seen.b, guess));
+    if (t === cur.t && b === cur.b) return;
+    cur.t = t; cur.b = b;
+    root.style.setProperty('--hide-t', t + 'px');
+    root.style.setProperty('--hide-b', b + 'px');
+    setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 0);
+  }
+
+  var probe, io;
+  if ('IntersectionObserver' in window){
+    var steps = []; for (var i = 0; i <= 100; i++) steps.push(i / 100);
+    io = new IntersectionObserver(function(list){
+      var e = list[list.length - 1];
+      if (!e.isIntersecting) return;
+      var r = e.boundingClientRect, v = e.intersectionRect;
+      seen.t = Math.max(0, v.top - r.top);
+      seen.b = Math.max(0, r.bottom - v.bottom);
+      apply();
+    }, { threshold: steps });
+  }
+  function watch(){
+    if (!io) return;
+    if (!probe){
+      probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;inset:0;pointer-events:none;visibility:hidden';
+      document.body.appendChild(probe);
+    }
+    io.unobserve(probe); io.observe(probe);
+  }
+  window.addEventListener('resize', function(e){ if (e.isTrusted){ apply(); watch(); } });
+  document.addEventListener('DOMContentLoaded', function(){ apply(); watch(); });
+})();
+</script>
 
 <header id="topbar">
   <div class="brand">

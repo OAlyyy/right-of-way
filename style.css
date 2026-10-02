@@ -451,7 +451,8 @@ kbd{
 .panel{
   width:100%; max-width:600px; max-height:100%; overflow:auto;
   background:var(--surface); border:1px solid var(--line);
-  border-radius:var(--radius); padding:22px 24px;
+  --pad-x:24px; --pad-y:22px;
+  border-radius:var(--radius); padding:var(--pad-y) var(--pad-x);
   box-shadow:0 20px 50px var(--shadow);
   display:flex; flex-direction:column; gap:16px;
 }
@@ -580,8 +581,13 @@ kbd{
 }
 @media (max-width:560px){
   #topbar{ padding-top:max(8px, env(safe-area-inset-top)); }
-  .brand-txt{ font-size:13px; }
-  .brand-txt .long{ display:none; }
+  /* the logo alone carries the brand; the four nav buttons need the width */
+  #topbar{ padding-left:max(12px, env(safe-area-inset-left)); padding-right:max(8px, env(safe-area-inset-right)); gap:8px; }
+  .brand-txt{ display:none; }
+  .logo{ width:22px; height:22px; margin-left:3px; }
+  nav{ gap:0; flex:0 1 auto; min-width:0; overflow-x:auto; scrollbar-width:none; }
+  nav::-webkit-scrollbar{ display:none; }
+  button.nav{ padding:7px 6px; font-size:13px; letter-spacing:.01em; white-space:nowrap; }
   #hud{ padding:9px 10px 0; gap:7px; }
   .gauge{ padding:4px 10px 5px; }
   #hud-speed{ font-size:22px; }
@@ -594,7 +600,7 @@ kbd{
   .look{ width:56px; height:72px; }
   #minimap{ width:124px; height:124px; }
   #hud-hint{ font-size:13px; padding:8px 12px; bottom:calc(104px + env(safe-area-inset-bottom)); }
-  .panel{ padding:17px 16px; border-radius:var(--radius-sm); gap:13px; }
+  .panel{ --pad-x:16px; --pad-y:17px; border-radius:var(--radius-sm); gap:13px; }
   .panel h2{ font-size:19px; }
   .res-buttons > *{ flex:1 1 auto; }
   .menu-inner{ padding-block:24px 48px; }
@@ -615,6 +621,34 @@ kbd{
 @media (hover:none) and (pointer:coarse){
   #brief-keys{ display:none; }
   .primary small, .pedal small{ display:none; }
+
+  /* long briefings and debriefs scroll; keep their buttons pinned to the
+     bottom of the card so Start / Next never hide below the fold */
+  .panel > #btn-start,
+  .panel > .res-buttons{
+    position:sticky; bottom:calc(-1 * var(--pad-y)); z-index:1;
+    margin:0 calc(-1 * var(--pad-x)) calc(-1 * var(--pad-y));
+    padding:12px var(--pad-x) 14px;
+    background:var(--surface);
+    border-top:1px solid var(--line);
+  }
+  .panel > #btn-start{
+    width:auto; padding-top:14px; padding-bottom:14px;
+    background:var(--accent); border:none;
+    border-radius:0 0 var(--radius-sm) var(--radius-sm);
+  }
+  /* overlays: a little less padding so the card gets more of the screen */
+  .overlay{ padding:max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+                    max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+
+  /* inside another app's frame: the host already keeps us clear of the
+     notch, and part of the frame may be off screen (see index.html) */
+  :root.framed body{
+    height:calc(100dvh - var(--hide-t, 0px) - var(--hide-b, 0px));
+    margin-top:var(--hide-t, 0px);
+  }
+  :root.framed #topbar{ padding-top:8px; }
+  :root.framed .overlay{ padding-top:10px; }
 }
 
 @media (prefers-reduced-motion:reduce){
