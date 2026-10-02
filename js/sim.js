@@ -606,10 +606,15 @@ var Sim = (function(){
     /* Booked for driving too fast, not for the instant a new limit starts
        to apply: passing a sign at the old speed and slowing is what a
        driver actually does. */
-    var lim = sc.limit || 50;
-    if (toKmh(p.v) > lim + 4) this.overspeed = (this.overspeed || 0) + dt;
+    var lim = sc.limit || 50, nowKmh = toKmh(p.v);
+    /* a warning first: creeping a few km/h over happens to everyone, and
+       you get a few seconds to notice and ease off. Clearly too fast
+       (more than 12 over) is booked almost at once, as in a real test. */
+    this.speedWarn = nowKmh > lim + 2;
+    if (nowKmh > lim + 4) this.overspeed = (this.overspeed || 0) + dt;
     else this.overspeed = 0;
-    if (this.overspeed > 1.2) this.fault('zu_schnell', null, {
+    var grace = nowKmh > lim + 12 ? 1.2 : 4;
+    if (this.overspeed > grace) this.fault('zu_schnell', null, {
       de: Math.round(toKmh(this.maxSpeed))+' km/h statt erlaubter '+lim+' km/h',
       en: Math.round(toKmh(this.maxSpeed))+' km/h where '+lim+' km/h is the limit' });
     /* --- Schrittgeschwindigkeit (home zone, bus with hazard lights) --- */

@@ -1,6 +1,7 @@
 /* Downloads the people models and the three.js add-ons to load them.
      node tools/fetch-people.js
-   People: "Animated Men Pack" by Quaternius (CC0), via poly.pizza.
+   People: "Animated Men Pack" and "Animated Women Pack" by Quaternius
+   (CC0 / public domain), via poly.pizza.
    GLTFLoader / SkeletonUtils: three.js r147 (MIT), classic builds.   */
 const fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..');
@@ -10,7 +11,9 @@ const FILES = {
   'js/vendor/SkeletonUtils.js': THREE + 'utils/SkeletonUtils.js',
   'assets/models/man_suit.glb':    'https://static.poly.pizza/66b57880-bcb0-479a-8d72-5c3e88afaa39.glb',
   'assets/models/man.glb':         'https://static.poly.pizza/3746be88-6799-4817-929b-6bc067c47caa.glb',
-  'assets/models/man_sleeves.glb': 'https://static.poly.pizza/e6019b9f-aed0-400c-8df4-ce5b648e9b82.glb'
+  'assets/models/man_sleeves.glb': 'https://static.poly.pizza/e6019b9f-aed0-400c-8df4-ce5b648e9b82.glb',
+  'assets/models/woman.glb':       'https://static.poly.pizza/51d5abdd-bb87-4b8d-9967-21738ffb8437.glb',
+  'assets/models/woman_dress.glb': 'https://static.poly.pizza/a642af96-e239-4c5f-b50d-7661ff51deec.glb'
 };
 (async () => {
   for (const [out, url] of Object.entries(FILES)){

@@ -320,6 +320,8 @@ h1 em{ font-style:normal; color:var(--accent-deep); }
   font-variant-numeric:tabular-nums; letter-spacing:-.02em;
 }
 #hud-speed.over{ color:var(--bad); }
+.gauge.warn{ background:var(--bad); }
+.gauge.warn #hud-speed, .gauge.warn small{ color:#fff; }
 .gauge small{ font-family:var(--font-label); font-size:11px; color:var(--ink-3); letter-spacing:.05em; }
 /* the instrument cluster: indicator arrows either side of the speedo,
    the way they sit on a real dashboard */
@@ -336,7 +338,7 @@ h1 em{ font-style:normal; color:var(--accent-deep); }
 .chip.btn:hover{ border-color:var(--ink-3); }
 #minimap{
   pointer-events:none;
-  width:148px; height:148px; border-radius:var(--radius-sm);
+  width:180px; height:180px; border-radius:var(--radius-sm);
   background:var(--surface); border:1px solid var(--line);
   box-shadow:0 2px 10px var(--shadow);
 }
@@ -590,7 +592,7 @@ kbd{
   .ind{ width:54px; height:52px; }
   .cluster-dash .ind{ width:34px; height:auto; }
   .look{ width:56px; height:72px; }
-  #minimap{ width:96px; height:96px; }
+  #minimap{ width:124px; height:124px; }
   #hud-hint{ font-size:13px; padding:8px 12px; bottom:calc(104px + env(safe-area-inset-bottom)); }
   .panel{ padding:17px 16px; border-radius:var(--radius-sm); gap:13px; }
   .panel h2{ font-size:19px; }
@@ -605,7 +607,7 @@ kbd{
   .pedal{ height:60px; width:88px; }
   .ind{ height:46px; width:54px; }
   .look{ height:60px; width:56px; }
-  #minimap{ width:92px; height:92px; }
+  #minimap{ width:112px; height:112px; }
   #hud-hint{ bottom:calc(74px + env(safe-area-inset-bottom)); padding:6px 12px; }
 }
 

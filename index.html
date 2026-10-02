@@ -89,7 +89,7 @@
             <!-- the sidebar (and its End drive button) is hidden on narrow screens -->
             <button id="btn-end-hud" class="chip readout btn hidden" type="button" data-t="drive.endShort"></button>
           </div>
-          <canvas id="minimap" width="296" height="296"></canvas>
+          <canvas id="minimap" width="360" height="360"></canvas>
         </div>
       </div>
 
@@ -205,12 +205,18 @@
           <tr><td><kbd>R</kbd></td><td data-t="ctrl.restart"></td></tr>
           <tr><td><kbd>H</kbd></td><td data-t="ctrl.hints"></td></tr>
           <tr><td><kbd>L</kbd></td><td data-t="ctrl.steerMode"></td></tr>
+          <tr><td><kbd>G</kbd></td><td data-t="ctrl.gfx"></td></tr>
+          <tr><td><kbd>N</kbd></td><td data-t="ctrl.sound"></td></tr>
+          <tr><td><kbd>T</kbd></td><td data-t="ctrl.weather"></td></tr>
         </table>
         <p class="note" data-t="side.note"></p>
       </div>
       <div class="side-foot">
         <button id="btn-hints" class="ghost small" type="button" data-t="side.hints"></button>
         <button id="btn-steer" class="ghost small" type="button" title="L"></button>
+        <button id="btn-gfx" class="ghost small" type="button" title="G"></button>
+        <button id="btn-sound" class="ghost small" type="button" title="N"></button>
+        <button id="btn-weather" class="ghost small" type="button" title="T"></button>
         <button id="btn-end-drive" class="ghost small hidden" type="button" data-t="drive.end"></button>
         <button id="btn-quit"  class="ghost small" type="button" data-t="side.quit"></button>
       </div>
@@ -234,6 +240,12 @@
 <script src="js/vendor/Sky.js"></script>
 <script src="js/vendor/GLTFLoader.js"></script>
 <script src="js/vendor/SkeletonUtils.js"></script>
+<script src="js/vendor/RGBELoader.js"></script>
+<script src="js/vendor/Pass.js"></script>
+<script src="js/vendor/CopyShader.js"></script>
+<script src="js/vendor/LuminosityHighPassShader.js"></script>
+<script src="js/vendor/UnrealBloomPass.js"></script>
+<script src="js/vendor/FXAAShader.js"></script>
 <script src="js/vendor/assets.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/geo.js"></script>
@@ -247,6 +259,7 @@
 <script src="js/render.js"></script>
 <script src="js/pov.js"></script>
 <script src="js/gl.js"></script>
+<script src="js/sound.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

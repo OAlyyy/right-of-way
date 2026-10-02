@@ -59,6 +59,9 @@ watches — speed, indicators, and above all who goes first.
 | `←` / `→` | **look left / right** (shoulder check) — hold it; the mouse on the road looks round too |
 | `M` | check the mirror |
 | `L` | steer yourself / let the car steer |
+| `G` | graphics: high (post-processing) / fast |
+| `N` | sound on / off |
+| `T` | weather: clear / evening sun / rain |
 | `X` | indicator off |
 | `V` | switch driver view ⇄ map view |
 | `H` | instructor hints on / off |
@@ -260,22 +263,76 @@ clear-coat paint, glass, rims and Frankfurt number plates. You sit in the
 car: dashboard, A-pillars and bonnet included. If WebGL is unavailable the
 game falls back to the 2D projection in `js/pov.js`, which the tests use.
 
+Real HDR photos of a German street by day and a square at night light the
+scene and show in paint and glass. On "Graphics: high" (`G`) the picture also
+gets soft contact shadows where things meet (ambient occlusion), a glow round
+bright lights, a gentle colour grade with vignette, and FXAA edge smoothing;
+phones and small screens start on "fast", which draws straight to the screen.
+
+More that makes it feel real:
+
+- **Trees** are grown in code from a few seeds: a trunk forking into limbs
+  and twigs with real bark, carrying cards of drawn leaf sprays that let
+  the sun through in dappled shadows and sway a little in the wind.
+- **Wear and tear**, worked out in world space so nothing repeats:
+  patched asphalt with tar seams and sealed cracks, markings worn through
+  in places, grime at the foot of walls with rain streaks, stained
+  paving, and glossy window glass that reflects the sky.
+- **Car bodies** are lofted: rounded slices from nose to tail, so the
+  bonnet, flanks and roofline are smooth and the clear coat reflects the
+  street in long highlights; flush lamps, mirrors on stalks, proper arches.
+- **The ride**: the car dives when you brake, squats when you pull away,
+  leans out of turns and shivers over the road; on "high" the edges of
+  the picture streak a little at speed.
+- **Weather** (`T`): low evening sun with long shadows, or rain - grey
+  light, mist, falling streaks, dark wet roads with puddles that mirror
+  the sky. Works by night too.
+- **The cabin**: a shaped dashboard with a digital cluster under a curved
+  hood, a centre screen showing the satnav, vents, trim and door cards, a
+  leather wheel with your hands on it (they turn with it, to a point), and
+  a rear-view mirror in a real housing on its stem.
+- **Overhead line** along the U-Bahn: masts with cantilevers, a contact
+  wire zig-zagging between them, droppers and a sagging catenary.
+- **German traffic lights**: rounded housings on a black contrast board
+  with a white rim, LED lenses under deep visors, and the yellow
+  "Signal kommt" push-button box on the mast.
+- **Street furniture**: bins on posts, bike hoops with parked bikes,
+  benches, bollards at the corners, street-name signs at every junction,
+  and round advertising pillars.
+- **Buildings with depth** on their street fronts, lined up with the painted
+  windows: stone sills, and on the older (Gründerzeit) houses stucco window
+  surrounds, cornices and bands between the floors; shop awnings and
+  lettered signs (lit at night, the pharmacy with its red A); door
+  canopies; dormers and chimneys on pitched roofs; satellite dishes and
+  TV aerials. Balconies have iron-bar, frosted-glass or painted railings with
+  a slim handrail, and flower boxes on some floors.
+- **Road details**: granite setts in the gutters with drain grates, and
+  tram rails laid flush in concrete where they cross a street.
+- **Sound** (`N`), synthesised in the browser with Web Audio, no files:
+  an engine that pulls through the gears with speed and pedal, tyre and
+  wind noise, the indicator relay, cars hissing past, the town's hum,
+  birds by day, rain, and the tram's bell as it comes up near you.
+
 Third-party files, all in the repo so the game runs offline:
 
 | | |
 |---|---|
 | `js/vendor/three.min.js`, `RoomEnvironment.js`, `Sky.js` | three.js r147, MIT (`js/vendor/THREE-LICENSE.txt`) |
-| `assets/tex/*.jpg` → `js/vendor/assets.js` | textures from [Poly Haven](https://polyhaven.com), CC0 |
-| `assets/models/*.glb` → `js/vendor/assets.js` | people: "Animated Men Pack" by [Quaternius](https://quaternius.com), CC0 (via poly.pizza) |
-| `js/vendor/GLTFLoader.js`, `SkeletonUtils.js` | three.js r147 add-ons, MIT |
+| `assets/tex/*.jpg` → `js/vendor/assets.js` | textures (asphalt, paving, gravel, plaster, roof tiles, grass, bark) from [Poly Haven](https://polyhaven.com), CC0 |
+| `assets/models/*.glb` → `js/vendor/assets.js` | people: "Animated Men Pack" and "Animated Women Pack" by [Quaternius](https://quaternius.com), CC0 (via poly.pizza) |
+| `js/vendor/GLTFLoader.js`, `SkeletonUtils.js`, `RGBELoader.js`, `Pass.js`, `UnrealBloomPass.js`, `CopyShader.js`, `LuminosityHighPassShader.js`, `FXAAShader.js` | three.js r147 add-ons, MIT |
+| `assets/hdri/*.hdr` → `js/vendor/assets.js` | sky photos "German Town Street" and "Hansaplatz" from [Poly Haven](https://polyhaven.com), CC0 |
 
-People are rigged, animated models (walk and idle), each given their own
-height and colours of shirt, trousers, hair and skin; cyclists keep a simpler
-figure, since the models have no cycling pose. Cars are baked per body type
+People are rigged, animated models (walk and idle): men and women, children
+among the walkers, and older people with grey hair who walk a little slower
+and stooped; each has their own height and colours of shirt or dress,
+trousers, hair and skin. Cyclists keep a simpler figure, since the models
+have no cycling pose. Cars are baked per body type
 into one mesh per material, so a street full of them stays fast.
 
-To refresh them: `node tools/fetch-assets.js` and `node tools/fetch-people.js`, then
-`powershell -File tools/shrink-textures.ps1`, then `node tools/pack-assets.js`.
+To refresh them: `node tools/fetch-assets.js`, `node tools/fetch-people.js` and
+`node tools/fetch-lighting.js`, then `powershell -File tools/shrink-textures.ps1`
+and `node tools/shrink-hdr.js`, then `node tools/pack-assets.js`.
 The textures travel as data URIs inside a script because WebGL refuses
 images loaded from `file://`.
 

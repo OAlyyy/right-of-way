@@ -59,6 +59,10 @@
   var look  = { left:false, right:false, mirror:false };
   var wheelKeys = { left:false, right:false };
   var STEER = 'fahrschule.steer.v1';
+  var GFX   = 'fahrschule.gfx.v1';
+  var SOUND = 'fahrschule.sound.v1';
+  var WEATHER = 'fahrschule.weather.v1';
+  var WEATHERS = ['clear', 'evening', 'rain'];
 
   function el(id){ return document.getElementById(id); }
   function show(id, on){ el(id).classList.toggle('hidden', !on); }
@@ -112,6 +116,9 @@
     document.documentElement.setAttribute('lang', l);
     el('btn-lang').textContent = I18N.t('lang.next');
     if (state.steer) applySteerLabel();
+    if (state.gfx) applyGfxLabel();
+    if (state.sound !== undefined) applySoundLabel();
+    if (state.weather) applyWeatherLabel();
     el('btn-theme').textContent = I18N.t(isDark() ? 'theme.day' : 'theme.night');
     el('menu-h1').innerHTML   = I18N.t('menu.h1');
     el('menu-lead').innerHTML = I18N.t('menu.lead');
@@ -332,6 +339,7 @@
     box.appendChild(faultRow(f));
     el('btn-fault-rewind').classList.toggle('hidden', !state.world.canRewind());
     show('overlay-fault', true);
+    state.faultShownAt = performance.now();
   }
   /* one explained mistake: what, which law, why it matters, what to do */
   function faultRow(f){
@@ -465,7 +473,7 @@
     requestAnimationFrame(tick);
     var dt = Math.min(0.05, (now - state.last)/1000);
     state.last = now;
-    if (state.screen !== 'play' || !state.world) return;
+    if (state.screen !== 'play' || !state.world){ if (typeof Sound !== 'undefined') Sound.idle(); return; }
 
     /* head movement: keys, buttons or a drag on the road */
     if (state.drag === null){
@@ -484,6 +492,7 @@
     /* the indicator stalk flicks back after a turn, as in a real car */
     if (state.world.indicatorOff){ input.indicator = 'off'; state.world.indicatorOff = false; }
     state.world.update(dt, input);
+    if (typeof Sound !== 'undefined') Sound.update(state.world, input, dt, { night:isDark(), rain:state.weather === 'rain' });
     if (state.world.exam) examiner(state.world);
     updateHud();
     draw();
@@ -561,8 +570,78 @@
   }
   function drawMinimap(){
     if (mini.classList.contains('hidden')) return;
-    var s = mini.width;
-    Render.frame(mctx, s, s, state.world, true);
+    var s = mini.width, w = state.world;
+    Render.frame(mctx, s, s, w, true, true);
+    if (!w.map) return;
+    var k = s/296;
+    mctx.setTransform(1, 0, 0, 1, 0, 0);
+    /* you: a bold arrow where the map is centred */
+    mctx.save();
+    mctx.translate(s/2, s*0.66);
+    mctx.fillStyle = '#ffffff'; mctx.strokeStyle = '#1b6fd6'; mctx.lineWidth = 4*k;
+    mctx.beginPath();
+    mctx.moveTo(0, -17*k); mctx.lineTo(12*k, 13*k); mctx.lineTo(0, 6*k); mctx.lineTo(-12*k, 13*k);
+    mctx.closePath(); mctx.fill(); mctx.stroke();
+    mctx.restore();
+    /* north, so the map can be matched to the real one */
+    var nh = -Math.PI/2 - w.player.pos.h;
+    var nx = s - 22*k, ny = 22*k;
+    mctx.save();
+    mctx.translate(nx, ny);
+    mctx.fillStyle = 'rgba(20,24,30,0.72)';
+    mctx.beginPath(); mctx.arc(0, 0, 15*k, 0, Math.PI*2); mctx.fill();
+    mctx.rotate(nh - Math.PI/2 + Math.PI/2);
+    mctx.fillStyle = '#e8533f';
+    mctx.beginPath(); mctx.moveTo(0, -12*k); mctx.lineTo(5*k, 0); mctx.lineTo(-5*k, 0); mctx.closePath(); mctx.fill();
+    mctx.fillStyle = '#ffffff'; mctx.font = 'bold ' + Math.round(11*k) + 'px Arial'; mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+    mctx.fillText('N', 0, 6*k);
+    mctx.restore();
+    /* what comes next: an arrow, how far, and the street */
+    var ins = w.instruction && w.instruction();
+    if (!ins) return;
+    var ph = 64*k;
+    mctx.fillStyle = 'rgba(16,20,26,0.86)';
+    mctx.fillRect(0, s - ph, s, ph);
+    drawTurnIcon(mctx, 34*k, s - ph/2, 22*k, ins.turn, w.player.steps[w.player.stepIdx].node.layout.type === 'roundabout');
+    var d = ins.dist;
+    var dt = d < 12 ? I18N.t('mini.now') : (d < 100 ? Math.round(d/5)*5 : Math.round(d/10)*10) + ' m';
+    mctx.fillStyle = '#ffffff'; mctx.textAlign = 'left'; mctx.textBaseline = 'alphabetic';
+    mctx.font = 'bold ' + Math.round(26*k) + 'px Arial';
+    mctx.fillText(dt, 66*k, s - ph + 30*k);
+    mctx.fillStyle = 'rgba(255,255,255,0.72)'; mctx.font = Math.round(13*k) + 'px Arial';
+    var name = ins.street || '';
+    while (name.length > 4 && mctx.measureText(name).width > s - 74*k) name = name.slice(0, -2);
+    if (name !== (ins.street || '')) name += '…';
+    mctx.fillText(name, 66*k, s - ph + 52*k);
+  }
+  /* satnav arrows: left, right, straight on, or a roundabout exit */
+  function drawTurnIcon(g, x, y, r, turn, roundabout){
+    g.save();
+    g.translate(x, y);
+    g.strokeStyle = '#ffffff'; g.fillStyle = '#ffffff';
+    g.lineWidth = r*0.28; g.lineCap = 'round'; g.lineJoin = 'round';
+    var head = function(px, py, ang){
+      g.save(); g.translate(px, py); g.rotate(ang);
+      g.beginPath(); g.moveTo(r*0.42, 0); g.lineTo(-r*0.22, -r*0.36); g.lineTo(-r*0.22, r*0.36); g.closePath(); g.fill();
+      g.restore();
+    };
+    if (roundabout){
+      g.beginPath(); g.arc(0, r*0.15, r*0.42, 0, Math.PI*2); g.stroke();
+      g.beginPath(); g.moveTo(0, r); g.lineTo(0, r*0.57); g.stroke();
+      var a = turn === 'right' ? 0 : turn === 'left' ? Math.PI : -Math.PI/2;
+      var ex = Math.cos(a)*r*0.42, ey = r*0.15 + Math.sin(a)*r*0.42;
+      g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex + Math.cos(a)*r*0.45, ey + Math.sin(a)*r*0.45); g.stroke();
+      head(ex + Math.cos(a)*r*0.6, ey + Math.sin(a)*r*0.6, a);
+    } else if (turn === 'left' || turn === 'right'){
+      var sd = turn === 'right' ? 1 : -1;
+      g.beginPath(); g.moveTo(-sd*r*0.35, r); g.lineTo(-sd*r*0.35, -r*0.05);
+      g.quadraticCurveTo(-sd*r*0.35, -r*0.45, 0, -r*0.45); g.lineTo(sd*r*0.45, -r*0.45); g.stroke();
+      head(sd*r*0.6, -r*0.45, sd > 0 ? 0 : Math.PI);
+    } else {
+      g.beginPath(); g.moveTo(0, r); g.lineTo(0, -r*0.5); g.stroke();
+      head(0, -r*0.72, -Math.PI/2);
+    }
+    g.restore();
   }
 
   /* ---------------- HUD ---------------- */
@@ -571,7 +650,7 @@
     var v = Math.round(toKmh(p.v));
     var sp = el('hud-speed');
     sp.textContent = v;
-    sp.className = v > w.sc.limit + 4 ? 'over' : '';
+    sp.className = v > (w.sc.limit || 50) + 2 ? 'over' : '';
     el('hud-limit').textContent  = w.sc.limit;
     if (state.mode === 'drive' && w.exam){
       var left = Math.max(0, Math.ceil(w.exam.seconds - w.t));
@@ -610,6 +689,12 @@
       h = I18N.t('drive.hold.retrying', { what:I18N.pick(fd.title) }) + '\n' +
           I18N.t('drive.hold', { s:w.hold.back, tip:I18N.pick(fd.tip) });
     }
+    /* too fast: say so before it is booked (not in the test - but the
+       speedometer still turns red there) */
+    if (w.speedWarn && !w.exam && !w.hold)
+      h = I18N.t('warn.speed', { lim:w.sc.limit || 50 });
+    el('hud-speed').parentNode.classList.toggle('warn', !!w.speedWarn && (w.t*3) % 1 < 0.5);
+    if (w.speedWarn && !w.exam && typeof Sound !== 'undefined') Sound.warn();
     var hb = el('hud-hint');
     if (h !== hb.dataset.msg){
       hb.textContent = h || '';
@@ -789,6 +874,37 @@
     el('btn-steer').textContent = I18N.t(state.steer === 'manual' ? 'steer.manual' : 'steer.auto');
     el('btn-steer').classList.toggle('off', state.steer !== 'manual');
   }
+  /* post-processing (soft shadows in corners, glow, colour grade) on or off */
+  function setGfx(q){
+    state.gfx = q;
+    save(GFX, q);
+    if (typeof GL3D !== 'undefined') GL3D.setQuality(q);
+    applyGfxLabel();
+  }
+  function applyGfxLabel(){
+    el('btn-gfx').textContent = I18N.t(state.gfx === 'high' ? 'gfx.high' : 'gfx.fast');
+    el('btn-gfx').classList.toggle('off', state.gfx !== 'high');
+  }
+  function setSound(v){
+    state.sound = v;
+    save(SOUND, v);
+    if (typeof Sound !== 'undefined') Sound.setOn(v);
+    applySoundLabel();
+  }
+  function applySoundLabel(){
+    el('btn-sound').textContent = I18N.t(state.sound ? 'sound.on' : 'sound.off');
+    el('btn-sound').classList.toggle('off', !state.sound);
+  }
+  /* clear, low evening sun, or rain on wet roads */
+  function setWeather(w){
+    state.weather = WEATHERS.indexOf(w) < 0 ? 'clear' : w;
+    save(WEATHER, state.weather);
+    if (typeof GL3D !== 'undefined') GL3D.setWeather(state.weather);
+    applyWeatherLabel();
+  }
+  function applyWeatherLabel(){
+    el('btn-weather').textContent = I18N.t('weather.' + state.weather);
+  }
   function setHints(on){
     state.hints = on;
     el('btn-hints').classList.toggle('off', !on);
@@ -817,6 +933,9 @@
     /* the examiner has stopped the car to explain something: only the
        Continue key does anything until you acknowledge it */
     if (state.mode === 'drive' && !el('overlay-fault').classList.contains('hidden')){
+      /* Space is also the brake: a held or panicked press must not rewind
+         the moment the card appears - only a fresh press, after a beat */
+      if (e.repeat || performance.now() - (state.faultShownAt || 0) < 900) return;
       if (k === ' ' || k === 'enter' || k === 'backspace'){
         if (state.world.canRewind()) rewindDrive(); else resumeDrive();
       }
@@ -836,6 +955,9 @@
     if (k === 'arrowleft')  look.left = true;
     if (k === 'arrowright') look.right = true;
     if (k === 'l'){ toggleSteer(); return; }
+    if (k === 'g'){ setGfx(state.gfx === 'high' ? 'fast' : 'high'); return; }
+    if (k === 'n'){ setSound(!state.sound); return; }
+    if (k === 't'){ setWeather(WEATHERS[(WEATHERS.indexOf(state.weather) + 1) % WEATHERS.length]); return; }
     if (k === 'm') look.mirror = true;
     if (k === 'q' && !e.repeat) setIndicator('left');
     if (k === 'e' && !e.repeat) setIndicator('right');
@@ -962,6 +1084,18 @@
     state.steer = load(STEER, 'manual') === 'auto' ? 'auto' : 'manual';
     applySteerLabel();
     el('btn-steer').onclick = toggleSteer;
+    /* phones and small screens start on fast */
+    var small = Math.min(window.innerWidth, window.innerHeight) < 600 || /Mobi|Android/i.test(navigator.userAgent);
+    setGfx(load(GFX, small ? 'fast' : 'high') === 'fast' ? 'fast' : 'high');
+    el('btn-gfx').onclick = function(){ setGfx(state.gfx === 'high' ? 'fast' : 'high'); };
+    setSound(load(SOUND, true) !== false);
+    el('btn-sound').onclick = function(){ setSound(!state.sound); };
+    setWeather(load(WEATHER, 'clear'));
+    el('btn-weather').onclick = function(){ setWeather(WEATHERS[(WEATHERS.indexOf(state.weather) + 1) % WEATHERS.length]); };
+    /* browsers only allow sound after the first key or tap */
+    ['keydown', 'pointerdown'].forEach(function(ev){
+      window.addEventListener(ev, function(){ if (typeof Sound !== 'undefined') Sound.unlock(); }, true);
+    });
     el('ind-l').onclick = function(){ setIndicator('left'); };
     el('ind-r').onclick = function(){ setIndicator('right'); };
     el('btn-lang').onclick = function(){

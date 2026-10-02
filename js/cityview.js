@@ -223,8 +223,69 @@ var CityView = (function(){
 
     var houses = [];
     blocks.forEach(function(b){ houses = houses.concat(b.houses); });
+
+    /* Street furniture, with its own dice so nothing else moves: on the
+       side streets bins, bike hoops (some with a bike) and the odd bench,
+       in the strip between the parked cars and the people walking; at
+       every junction corner a street-name sign and bollards that stop
+       corner parking; at some corners an advertising pillar. */
+    var furn = [], frand = rng((map.blockSeed || 99) + 7177);
+    function freeOf(x, y, d){
+      for (var i = 0; i < trees.length; i++) if (Math.hypot(trees[i].x - x, trees[i].y - y) < d) return false;
+      for (i = 0; i < lamps.length; i++) if (Math.hypot(lamps[i].x - x, lamps[i].y - y) < d*0.7) return false;
+      for (i = 0; i < furn.length; i++) if (Math.hypot(furn[i].x - x, furn[i].y - y) < d) return false;
+      return true;
+    }
+    function inBlock(x, y){
+      return blocks.some(function(b){ return x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1; });
+    }
+    function sideStreet(isCol, i){
+      var main = isCol ? i === map.priCol : i === map.priRow;
+      if (main) return;
+      var line = isCol ? colX(i) : rowY(i), n = isCol ? rows : cols;
+      for (var k = 0; k < n - 1; k++){
+        var a = isCol ? rowY(k) : colX(k), b = isCol ? rowY(k+1) : colX(k+1);
+        var clear = CFG.BOX + City.CORNER_R + 60;
+        [-1, 1].forEach(function(side){
+          if (isCol && i === map.railCol && side > 0) return;
+          for (var t = a + clear + frand()*80; t < b - clear; t += 110 + frand()*170){
+            var r = frand(), kind = r < 0.45 ? 'bin' : r < 0.8 ? 'rack' : 'bench';
+            var lat = side*(KERB + (kind === 'bench' ? WALK - 6 : 19));
+            var x = isCol ? line + lat : t, y = isCol ? t : line + lat;
+            if (!freeOf(x, y, kind === 'rack' ? 34 : 22)) continue;
+            /* along the street; benches face it */
+            var h = isCol ? Math.PI/2 : 0;
+            furn.push({ kind:kind, x:x, y:y, h:h, side:side, col:isCol, bikes:kind === 'rack' ? Math.floor(frand()*3) : 0, seed:frand() });
+          }
+        });
+      }
+    }
+    for (c = 0; c < cols; c++) sideStreet(true, c);
+    for (r = 0; r < rows; r++) sideStreet(false, r);
+    (map.nodes || []).forEach(function(n){
+      if (n.layout && n.layout.type === 'roundabout') return;       // its own kerbs, no corners
+      var c0 = Math.round(n.x/S + (cols - 1)/2), r0 = Math.round(n.y/S + (rows - 1)/2);
+      var nameCol = map.streetName ? map.streetName(n, 'N') : '', nameRow = map.streetName ? map.streetName(n, 'E') : '';
+      var pillarAt = frand() < 0.35 ? Math.floor(frand()*4) : -1;
+      [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function(q, qi){
+        if (c0 === map.railCol && q[0] > 0) return;              // the U-Bahn side has no corner
+        var cx = n.x + q[0]*(KERB + 12), cy = n.y + q[1]*(KERB + City.CORNER_R + 16);
+        if (inBlock(cx, cy)) return;
+        if (qi % 2 === 0 || frand() < 0.5)
+          furn.push({ kind:'name', x:cx, y:cy, a:nameCol, b:nameRow, q:q });
+        /* bollards along the kerb where the corner rounds */
+        var bx = n.x + q[0]*(KERB + 3), by = n.y + q[1]*(KERB + City.CORNER_R + 4);
+        for (var j = 0; j < 3; j++) furn.push({ kind:'bollard', x:bx, y:by + q[1]*j*18 });
+        if (qi === pillarAt){
+          var px = n.x + q[0]*(KERB + WALK*0.55), py = n.y + q[1]*(KERB + City.CORNER_R + 60);
+          if (!inBlock(px, py) && freeOf(px, py, 24)) furn.push({ kind:'pillar', x:px, y:py, seed:frand() });
+        }
+      });
+      void r0;
+    });
+
     map._view = { blocks:blocks, houses:houses, trees:trees, lamps:lamps,
-                  parked:parked, walkers:walkers, manholes:manholes,
+                  parked:parked, walkers:walkers, manholes:manholes, furniture:furn,
                   colX:colX, rowY:rowY };
     return map._view;
   }

@@ -56,6 +56,19 @@ var Render = (function(){
   }
 
   /* ---------- camera ---------- */
+  /* the minimap in the open world: like a satnav, centred a little below
+     your car and turned so the way you face is always up - left on the
+     map is your left */
+  var MINI_SPAN = 1500;                               // world units across (~125 m)
+  function headingCamera(ctx, w, h, world){
+    var p = world.player.pos, scale = Math.min(w, h) / MINI_SPAN;
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.translate(w/2, h*0.66);
+    ctx.scale(scale, scale);
+    ctx.rotate(-Math.PI/2 - p.h);
+    ctx.translate(-p.x, -p.y);
+    return scale;
+  }
   function camera(ctx, w, h, world, preview){
     /* Every drawing function below builds its geometry as if the current
        junction sat at the origin - true for a lesson (there is only ever
@@ -330,15 +343,15 @@ var Render = (function(){
   }
 
   /* ---------- the route the player has to take ---------- */
-  function drawRoute(ctx, world){
+  function drawRoute(ctx, world, mini){
     var p = world.player, path = p.path;
     ctx.save();
-    ctx.strokeStyle = COL.route;
-    ctx.lineWidth = 16; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.setLineDash([22, 20]);
+    ctx.strokeStyle = mini ? COL.routeArrow : COL.route;
+    ctx.lineWidth = mini ? 26 : 16; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (!mini) ctx.setLineDash([22, 20]);
     ctx.beginPath();
     var started = false;
-    for (var s = p.s; s <= Math.min(path.length, p.s + 900); s += 12){
+    for (var s = p.s; s <= Math.min(path.length, p.s + (mini ? 1500 : 900)); s += 12){
       var q = path.at(s);
       if (!started){ ctx.moveTo(q.x, q.y); started = true; } else ctx.lineTo(q.x, q.y);
     }
@@ -350,6 +363,7 @@ var Render = (function(){
     ctx.translate(e.x, e.y); ctx.rotate(e.h);
     ctx.fillStyle = COL.routeArrow;
     ctx.beginPath();
+    if (mini) ctx.scale(2.2, 2.2);
     ctx.moveTo(20,0); ctx.lineTo(-10,-14); ctx.lineTo(-10,14);
     ctx.closePath(); ctx.fill();
     ctx.restore();
@@ -561,10 +575,11 @@ var Render = (function(){
   }
 
   /* ---------- main entry ---------- */
-  function frame(ctx, w, h, world, preview){
+  function frame(ctx, w, h, world, preview, mini){
     ctx.setTransform(1,0,0,1,0,0);
     ctx.clearRect(0,0,w,h);
-    var scale = camera(ctx, w, h, world, preview);
+    mini = !!(mini && world.map);
+    var scale = mini ? headingCamera(ctx, w, h, world) : camera(ctx, w, h, world, preview);
     /* the junction's own drawing is built around the origin: move onto
        wherever it really is (a lesson's is at the origin anyway) */
     var j = world.junctionFor(world.player);
@@ -573,10 +588,12 @@ var Render = (function(){
     if (!world.map){ drawGround(ctx, world); drawMarkings(ctx, world); }
     ctx.restore();
     if (world.map) drawCityTops(ctx, world);
-    drawRoute(ctx, world);
-    ctx.save(); ctx.translate(j.x || 0, j.y || 0);
-    drawSigns(ctx, world, scale);
-    ctx.restore();
+    drawRoute(ctx, world, mini);
+    if (!mini){
+      ctx.save(); ctx.translate(j.x || 0, j.y || 0);
+      drawSigns(ctx, world, scale);
+      ctx.restore();
+    }
     drawPeds(ctx, world);             // a pedestrian knows where it stands
     world.vehicles.forEach(function(v){ if (!v.done) drawVehicle(ctx, v, world.t); });
     ctx.save(); ctx.translate(j.x || 0, j.y || 0);

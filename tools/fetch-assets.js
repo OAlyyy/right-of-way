@@ -24,7 +24,8 @@ const TEXTURES = {
   gravel:  'rocky_gravel',
   plaster: 'white_plaster_rough_01',
   roof:    'clay_roof_tiles_02',
-  grass:   'leafy_grass'
+  grass:   'leafy_grass',
+  bark:    'bark_brown_02'
 };
 for (const [name, id] of Object.entries(TEXTURES)){
   FILES['assets/src/' + name + '_diff.jpg'] = PH + id + '/' + id + '_diff_1k.jpg';
