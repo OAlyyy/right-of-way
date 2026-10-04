@@ -271,6 +271,7 @@
     show('overlay-ref', false);
     show('overlay-fault', false);
     el('btn-end-drive').classList.add('hidden'); el('btn-end-hud').classList.add('hidden');
+    el('btn-menu-hud').classList.remove('hidden');
     applyView();
     resize();
     updateHud();
@@ -320,6 +321,7 @@
     show('overlay-ref', false);
     show('overlay-fault', false);
     el('btn-end-drive').classList.remove('hidden'); el('btn-end-hud').classList.remove('hidden');
+    el('btn-menu-hud').classList.add('hidden');
     applyView();
     resize();
     updateHud();
@@ -998,6 +1000,9 @@
     n.addEventListener('pointercancel', up);
     n.addEventListener('lostpointercapture', up);
     n.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+    /* no long-press text selection, magnifier or callout on iOS; pointer
+       events still arrive, so the press itself is unaffected */
+    n.addEventListener('touchstart', function(e){ if (e.cancelable) e.preventDefault(); }, { passive:false });
 
     /* iOS, above all inside another app's frame, sometimes loses the
        button's pointerup and the pedal sticks down. Back-ups: the same
@@ -1023,6 +1028,15 @@
     window.addEventListener('pagehide', release);
     window.addEventListener('blur', release);
   }
+
+  /* belt and braces: a selection that still lands on the HUD or the
+     touch controls is cleared at once */
+  document.addEventListener('selectionchange', function(){
+    var sel = window.getSelection && window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.anchorNode) return;
+    var n = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode;
+    if (n && n.closest && n.closest('.controls, #hud')) sel.removeAllRanges();
+  });
 
   /* Drag across the road: when you steer yourself, that is the wheel
      (sideways from where you touched, let go and it centres); otherwise
@@ -1102,6 +1116,7 @@
     el('btn-fault-rewind').onclick = rewindDrive;
     el('btn-end-drive').onclick = endDrive;
     el('btn-end-hud').onclick = endDrive;
+    el('btn-menu-hud').onclick = toMenu;
     el('btn-view').onclick  = toggleView;
     el('btn-ref').onclick   = function(){ buildReference(); show('overlay-ref', true); };
     el('btn-ref-close').onclick = function(){ show('overlay-ref', false); };
