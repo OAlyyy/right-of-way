@@ -13190,6 +13190,7 @@ var GL3D = (function(){
     envDay = pmrem.fromScene(new THREE.RoomEnvironment(), 0.04).texture;
     loadSkies();
     setQuality(quality);
+    if (pace.lite) applyLite();
 
     /* street lamps light the road around you after dark: a few real
        lights, moved to whichever lamps are nearest */
@@ -13759,21 +13760,32 @@ var GL3D = (function(){
     var o = Geo.ARM_VEC[arm];
     obj.rotation.y = Math.atan2(o.x, o.y);
   }
+  /* masts, housings, sign plates: nothing about them changes, so they are
+     collected here and baked into a mesh per material when the town is
+     built - hundreds of separate little draws otherwise */
+  var staticBits = [];
+  function keep(mesh){
+    /* remember a mesh where it stands in the world, whatever it hangs from */
+    mesh.updateWorldMatrix(true, false);
+    var m = new THREE.Mesh(mesh.geometry, mesh.material);
+    m.matrix.copy(mesh.matrixWorld); m.matrixAutoUpdate = false; m.userData.placed = true;
+    staticBits.push(m);
+  }
   function addSign(group, type, x, y, arm, lift){
     var M = mats(), h = 2.2 + (lift || 0);
     var post = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, h + 0.4, 8), M.metal);
     post.position.set(x*U, (h + 0.4)/2, y*U); post.castShadow = true;
-    group.add(post);
+    keep(post);
     var face = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.75), signFace(type));
     face.position.set(x*U, h + 0.2, y*U);
     faceTowards(face, arm);
     var o = Geo.ARM_VEC[arm];
     face.position.x += o.x*0.04; face.position.z += o.y*0.04;
-    group.add(face);
+    keep(face);
     var back = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.72), M.metal);
     back.position.copy(face.position); back.rotation.y = face.rotation.y + Math.PI;
     back.position.x -= o.x*0.02; back.position.z -= o.y*0.02;
-    group.add(back);
+    keep(back);
   }
   /* a German signal head on its mast: rounded housing on a black
      contrast board with a white rim, three lenses under deep visors, and
@@ -13837,7 +13849,7 @@ var GL3D = (function(){
   function addSignal(group, x, y, arm){
     var M = mats(), K = signalKit();
     var mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 3.4, 12), M.mast);
-    mast.position.set(x*U, 1.7, y*U); mast.castShadow = true; group.add(mast);
+    mast.position.set(x*U, 1.7, y*U); mast.castShadow = true; keep(mast);
     var head = new THREE.Group();
     head.position.set(x*U, 2.75, y*U);
     faceTowards(head, arm);
@@ -13858,14 +13870,20 @@ var GL3D = (function(){
       visor.position.set(0, l[1], 0.11); head.add(visor);
       lenses[l[0]] = lens;
     });
+    /* only the three lenses stay live; the rest of the head is baked */
+    head.children.slice().forEach(function(ch){
+      if (ch === lenses.red || ch === lenses.yellow || ch === lenses.green) return;
+      keep(ch); head.remove(ch);
+    });
     group.add(head);
+    drawNear(head, head.position.x, head.position.z, 260);
     /* the request button, at hand height, turned towards the pavement */
     var btn = new THREE.Group();
     btn.position.set(x*U, 1.1, y*U);
     faceTowards(btn, arm); btn.rotateY(Math.PI/2);
     var bb = new THREE.Mesh(K.button, M.button); bb.position.z = 0.1; btn.add(bb);
     var face = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.175), K.arrow); face.position.z = 0.141; btn.add(face);
-    group.add(btn);
+    keep(bb); keep(face);
     return lenses;
   }
   function addStation(group, name, x, y){
@@ -14270,6 +14288,47 @@ var GL3D = (function(){
     var depthMat = new THREE.MeshDepthMaterial({ depthPacking:THREE.RGBADepthPacking, map:leafTex, alphaTest:0.5 });
     return (treeKit = { kinds:kinds, leafMat:leafMat, depthMat:depthMat });
   }
+  /* ---------------- drawing only what is near ---------------- */
+  /* Trees and parked cars are instances spread over the whole town, which
+     the GPU would otherwise draw in full three times a frame (the view,
+     the shadows, the mirror). Each set keeps its full list and, whenever
+     you have moved a few metres, packs just the ones within its range to
+     the front of the instance buffers. Parked cars far off swap to a
+     plain low-polygon body that looks the same at that distance. */
+  var TREE_NEAR = 100;
+  var cullSets = [], nearOnly = [], cullAt = { x:1e9, z:1e9 };
+  /* a mesh that is only worth drawing within far metres of you */
+  function drawNear(obj, x, z, far){ nearOnly.push({ obj:obj, x:x, z:z, far2:far*far }); }
+  function cullSet(meshes, items, far, near){
+    meshes.forEach(function(im){ im.frustumCulled = false; });
+    cullSets.push({ meshes:meshes, items:items, far2:far*far, near2:(near || 0)*(near || 0) });
+  }
+  function updateCulling(cx, cz){
+    if (Math.hypot(cx - cullAt.x, cz - cullAt.z) < 5) return;
+    cullAt.x = cx; cullAt.z = cz;
+    cullSets.forEach(function(s){
+      var n = 0, items = s.items, meshes = s.meshes, k;
+      for (var i = 0; i < items.length; i++){
+        var it = items[i], dx = it.x - cx, dz = it.z - cz, d2 = dx*dx + dz*dz;
+        if (d2 < s.near2 || d2 >= s.far2) continue;
+        for (k = 0; k < meshes.length; k++){
+          meshes[k].setMatrixAt(n, it.m);
+          if (it.c && meshes[k].userData.tint) meshes[k].setColorAt(n, it.c);
+        }
+        n++;
+      }
+      for (k = 0; k < meshes.length; k++){
+        meshes[k].count = n;
+        meshes[k].visible = n > 0;
+        meshes[k].instanceMatrix.needsUpdate = true;
+        if (meshes[k].instanceColor) meshes[k].instanceColor.needsUpdate = true;
+      }
+    });
+    for (var j = 0; j < nearOnly.length; j++){
+      var o = nearOnly[j], ox = o.x - cx, oz = o.z - cz;
+      o.obj.visible = ox*ox + oz*oz < o.far2;
+    }
+  }
   function buildTrees(group, trees){
     if (!trees.length) return;
     var M = mats(), kit = treeSetup();
@@ -14284,7 +14343,15 @@ var GL3D = (function(){
       var kind = kit.kinds[k];
       var wood = new THREE.InstancedMesh(kind.wood, M.trunk, list.length);
       var leaves = new THREE.InstancedMesh(kind.leaves, kit.leafMat, list.length);
-      list.forEach(function(t, i){
+      leaves.userData.tint = true;
+      /* the same trees again for the distance, without shadows: the sun's
+         shadow box only reaches about 70 m */
+      var woodFar = new THREE.InstancedMesh(kind.wood, M.trunk, list.length);
+      var leavesFar = new THREE.InstancedMesh(kind.leaves, kit.leafMat, list.length);
+      leavesFar.userData.tint = true;
+      woodFar.receiveShadow = leavesFar.receiveShadow = true;
+      group.add(woodFar); group.add(leavesFar);
+      var items = list.map(function(t, i){
         var h = t.h*U*1.1, r = t.r*U*1.5;
         q.setFromAxisAngle(THREE.Object3D.DefaultUp, t.tone*40);
         m.compose(p.set(t.x*U, 0, t.y*U), q, s.set(r/kind.r, h/kind.h, r/kind.r));
@@ -14292,7 +14359,10 @@ var GL3D = (function(){
         /* each tree its own green: some yellower, some darker and bluer */
         col.setHSL(0.20 + t.tone*0.07, 0.30, 0.62 + ((t.tone*7.3) % 1)*0.16);
         leaves.setColorAt(i, col);
+        return { x:t.x*U, z:t.y*U, m:m.clone(), c:col.clone() };
       });
+      cullSet([wood, leaves], items, TREE_NEAR);
+      cullSet([woodFar, leavesFar], items, 260, TREE_NEAR);
       wood.castShadow = wood.receiveShadow = true;
       leaves.castShadow = leaves.receiveShadow = true;
       leaves.customDepthMaterial = kit.depthMat;
@@ -14325,6 +14395,7 @@ var GL3D = (function(){
   /* ---------------- the static scene ---------------- */
   function buildWorld(world){
     if (built){ scene.remove(built.group); disposeGroup(built.group); }
+    staticBits = []; cullSets = []; nearOnly = []; cullAt.x = cullAt.z = 1e9;
     if (dyn){
       Object.keys(dyn.meshes).forEach(function(id){ scene.remove(dyn.meshes[id]); });
       Object.keys(dyn.peds).forEach(function(id){ scene.remove(dyn.peds[id]); });
@@ -14382,7 +14453,7 @@ var GL3D = (function(){
       ['planter', M.planter, true], ['flowers', balconyMats().flowers, true],
       ['wallA', M.wallA, true], ['wallB', M.wallB, true], ['shop', M.shop, true], ['home', M.home, true],
       ['gable', M.gable, true], ['roof', M.roof, true], ['eaves', M.kerb, true],
-      ['stucco', M.stucco, true], ['sill', M.sill, true], ['awning', M.awning, true], ['chimney', M.brick, true],
+      ['stucco', M.stucco], ['sill', M.sill], ['awning', M.awning, true], ['chimney', M.brick, true],
       ['dormerGlass', M.dormerGlass]
     ];
     layers.forEach(function(l){
@@ -14391,6 +14462,8 @@ var GL3D = (function(){
     });
     if (P.drains && P.drains.length) group.add(buildDrains(P.drains));
     if (P.signs) mergeByMaterial(P.signs).forEach(function(m){ group.add(m); });
+    mergeByMaterial(staticBits).forEach(function(m){ group.add(m); });
+    staticBits = [];
     if (P.dishes && (P.dishes.length || P.aerials.length)) buildRoofBits(group, P.dishes, P.aerials);
     scene.add(group);
     built = { world:world, group:group, signals:signals, stations:stations, lamps:lampPos };
@@ -14506,23 +14579,43 @@ var GL3D = (function(){
     var up = new THREE.Vector3(0, 1, 0), col = new THREE.Color();
     Object.keys(byType).forEach(function(t){
       var list = byType[t], type = TYPE_NAMES[t];
-      var B = bakedCar(type, carGeometry(type, CFG.CAR_L*U, CFG.CAR_W*U));
-      Object.keys(B).forEach(function(k){
-        if (!mats[k]) return;
-        var im = new THREE.InstancedMesh(B[k], mats[k], list.length);
-        list.forEach(function(pc, i){
-          m.compose(pv.set(pc.x*U, 0.03, pc.y*U), q.setFromAxisAngle(up, -pc.h), s);
-          im.setMatrixAt(i, m);
-          if (k === 'paint' || k === 'cabPaint') im.setColorAt(i, col.set(pc.color));
-        });
-        im.castShadow = k === 'paint' || k === 'glass' || k === 'tyre';
-        im.receiveShadow = true;
-        im.frustumCulled = false;                     // instances spread over the whole town
-        group.add(im);
+      var G = carGeometry(type, CFG.CAR_L*U, CFG.CAR_W*U), B = bakedCar(type, G), F = farCar(type, G);
+      var items = list.map(function(pc){
+        m.compose(pv.set(pc.x*U, 0.03, pc.y*U), q.setFromAxisAngle(up, -pc.h), s);
+        return { x:pc.x*U, z:pc.y*U, m:m.clone(), c:new THREE.Color(pc.color) };
       });
+      function instances(geos, shadows){
+        var out = [];
+        Object.keys(geos).forEach(function(k){
+          if (!mats[k]) return;
+          var im = new THREE.InstancedMesh(geos[k], mats[k], list.length);
+          im.userData.tint = k === 'paint' || k === 'cabPaint';
+          items.forEach(function(it, i){ im.setMatrixAt(i, it.m); if (im.userData.tint) im.setColorAt(i, it.c); });
+          im.castShadow = shadows && (k === 'paint' || k === 'glass' || k === 'tyre');
+          im.receiveShadow = true;
+          group.add(im); out.push(im);
+        });
+        return out;
+      }
+      cullSet(instances(B, true), items, PARK_NEAR);
+      cullSet(instances(F, false), items, 340, PARK_NEAR);
     });
   }
-  var parkedPaintMat = null;
+  var parkedPaintMat = null, PARK_NEAR = 70;
+  /* the same car in a few hundred triangles, for the far end of the street */
+  function farCar(type, G){
+    if (G.far) return G.far;
+    var T = G.T, L = G.L, W = G.W, paint = new Merger(), glass = new Merger(), tyre = new Merger(), I = new THREE.Matrix4();
+    paint.add(loftBody(T, L, W, 12, 2), I);
+    paint.add(G.roof, I);
+    if (G.panel) paint.add(G.panel, I);
+    glass.add(loftCab(T, L, W*T.glassW, null, 8, 2), I);
+    var wheel = new THREE.CylinderGeometry(T.wheelR, T.wheelR, 0.23, 10).rotateX(Math.PI/2);
+    [[L*0.31, 1], [L*0.31, -1], [-L*0.30, 1], [-L*0.30, -1]].forEach(function(w){
+      tyre.add(wheel, new THREE.Matrix4().makeTranslation(w[0], T.wheelR, w[1]*(W/2 - 0.1)));
+    });
+    return (G.far = { paint:paint.mesh(null).geometry, glass:glass.mesh(null).geometry, tyre:tyre.mesh(null).geometry });
+  }
 
   var BALC = null;
   function balconyMats(){
@@ -14611,7 +14704,7 @@ var GL3D = (function(){
   function mergeByMaterial(list){
     var by = new Map();
     list.forEach(function(m){
-      m.updateMatrix();
+      if (!m.userData.placed) m.updateMatrix();
       if (!by.has(m.material)) by.set(m.material, new Merger());
       by.get(m.material).add(m.geometry, m.matrix);
     });
@@ -14735,7 +14828,8 @@ var GL3D = (function(){
     /* put a unit shape into the merged mesh for this material */
     function put(mat, geo, x, y, z, sx, sy, sz, ry, rx, rz){
       m4.compose(p.set(x, y, z), q.setFromEuler(e.set(rx || 0, ry || 0, rz || 0, 'YXZ')), s.set(sx, sy, sz));
-      (mg[mat] || (mg[mat] = new Merger())).add(geo, m4);
+      var key = mat + '@' + Math.floor(x/90) + ',' + Math.floor(z/90);      // one mesh per 90 m square
+      (mg[key] || (mg[key] = new Merger())).add(geo, m4);
     }
     /* a point a metres along the street and b metres towards the houses */
     function at(o, a, b){ return o.col ? [o.x*U + b*o.side, o.y*U + a] : [o.x*U + a, o.y*U + b*o.side]; }
@@ -14788,8 +14882,11 @@ var GL3D = (function(){
     });
     var mats = { steel:F.steel, anthr:F.anthr, bin:F.bin, white:F.white, wood:F.wood, green:F.green, tyre:F.tyre, frame:F.frame, poster:posterMat() };
     Object.keys(mg).forEach(function(k){
-      var m = mg[k].mesh(mats[k], true);
-      if (m) group.add(m);
+      var m = mg[k].mesh(mats[k.split('@')[0]], true);
+      if (!m) return;
+      group.add(m);
+      var cell = k.split('@')[1].split(',');
+      drawNear(m, (+cell[0] + 0.5)*90, (+cell[1] + 0.5)*90, 240);
     });
     /* street names: one blade along each street, both sides printed */
     var blade = new THREE.PlaneGeometry(0.9, 0.2), blades = [];
@@ -14825,8 +14922,8 @@ var GL3D = (function(){
     var near = view.walkers.map(function(wk){
       var at = CityView.walkerAt(wk, t);
       return { wk:wk, at:at, d:Math.hypot(at.x - p.pos.x, at.y - p.pos.y) };
-    }).filter(function(o){ return o.d < 150*CFG.PPM; })
-      .sort(function(a, b){ return a.d - b.d; }).slice(0, 28);
+    }).filter(function(o){ return o.d < 120*CFG.PPM; })
+      .sort(function(a, b){ return a.d - b.d; }).slice(0, 20);
     near.forEach(function(o){
       var g = o.wk._mesh;
       if (g && people.ready && g.userData.version !== people.version){ scene.remove(g); g = null; }
@@ -14836,6 +14933,7 @@ var GL3D = (function(){
         scene.add(g); walkerAll.push(g);
       }
       g.visible = true;
+      if (g.userData.skin) g.userData.skin.castShadow = o.d < 45*CFG.PPM;
       g.position.set(o.at.x*U, 0.02, o.at.y*U);
       g.rotation.y = -o.at.h;
       swing(g, 0.42, t);
@@ -15175,7 +15273,7 @@ var GL3D = (function(){
       return [p[0]*(1 - lean*f), p[1]];
     });
   }
-  function loftBody(T, L, W){
+  function loftBody(T, L, W, slices, skip){
     var n = T.body.length, h = L/2;
     var upper = curveFn(T.body.slice(3, n - 1).map(function(p){ return [p[0]*L, p[1]]; }));
     var lower = curveFn([T.body[n - 1], T.body[0], T.body[1], T.body[2]].map(function(p){ return [p[0]*L, p[1]]; }));
@@ -15189,31 +15287,32 @@ var GL3D = (function(){
       return y;
     }
     var P = [];
-    stations(40).forEach(function(s){
+    stations(slices || 40).forEach(function(s){
       var x = s*h*0.999, cut = floor(x);
       var w = (W/2) * Math.pow(Math.max(0, 1 - Math.pow(Math.abs(s), PLAN_P)), 1/PLAN_P);
-      P.push(section(Math.max(0.002, w), lower(x), upper(x), 0.08, 0.17, 0.05, 0.025).map(function(p){
-        return [x, Math.max(cut, p[1]), p[0]];
-      }));
+      var ring = section(Math.max(0.002, w), lower(x), upper(x), 0.08, 0.17, 0.05, 0.025);
+      if (skip) ring = ring.filter(function(p, j){ return j % skip === 0; });
+      P.push(ring.map(function(p){ return [x, Math.max(cut, p[1]), p[0]]; }));
     });
     return gridGeometry(P, true);
   }
   /* the glasshouse, narrower at the roof than at the belt; with opts just
      the top (or top and sides) between x0 and x1, a hair proud of the
      glass - the painted roof, or a panel van's blind sides */
-  function loftCab(T, L, Wc, opts){
+  function loftCab(T, L, Wc, opts, slices, skip){
     var cab = T.cab;
     var x0 = cab[cab.length - 1][0]*L, x1 = cab[0][0]*L;
     var top = curveFn(cab.map(function(p){ return [p[0]*L, p[1]]; }));
     var bot = function(x){ var t = (x - x0)/(x1 - x0); return cab[cab.length - 1][1] + (cab[0][1] - cab[cab.length - 1][1])*t; };
     var lean = T.panel ? 0.06 : 0.2, P = [];
     var a0 = opts ? opts.x0 : x0, a1 = opts ? opts.x1 : x1;
-    stations(opts ? 12 : 28).forEach(function(s){
+    stations(opts ? 12 : (slices || 28)).forEach(function(s){
       var x = a0 + (a1 - a0)*(s + 1)/2;
       var sc = ((x - x0)/(x1 - x0))*2 - 1;
       var plan = Math.pow(Math.max(0, 1 - Math.pow(Math.min(1, Math.abs(sc)), 8)), 1/8);
       var ring = section(Math.max(0.002, Wc/2*plan), bot(x), Math.max(bot(x) + 0.002, top(x)), 0.001, 0.14, lean, 0.03);
       if (opts) ring = ring.slice(opts.from, SECTION - opts.from + 1).map(function(p){ return [p[0]*1.012, p[1] + 0.008]; });
+      else if (skip) ring = ring.filter(function(p, j){ return j % skip === 0; });
       P.push(ring.map(function(p){ return [x, p[1], p[0]]; }));
     });
     return gridGeometry(P, !opts);
@@ -15241,7 +15340,7 @@ var GL3D = (function(){
       cab:  loftCab(T, L, W*T.glassW),
       roof: loftCab(T, L, W*T.glassW, { x0:rf[1]*L, x1:rf[0]*L, from:9 }),
       /* a tyre with a rounded sidewall: a fat torus, the rim filling its middle */
-      tyre: new THREE.TorusGeometry(T.wheelR - 0.1, 0.105, 10, 28).scale(1, 1, 1.1),
+      tyre: new THREE.TorusGeometry(T.wheelR - 0.1, 0.105, 8, 20).scale(1, 1, 1.1),
       seam: new THREE.BoxGeometry(0.012, 0.5, 0.008),
       handle: new THREE.BoxGeometry(0.15, 0.03, 0.025),
       rail: new THREE.BoxGeometry(L*0.5, 0.035, 0.04),
@@ -15380,6 +15479,22 @@ var GL3D = (function(){
     }
     return g;
   }
+  /* every visible mesh under a vehicle, fused into one per material (the
+     hidden ones - brake lights, indicators - are switched on and off, so
+     they stay as they are) */
+  function bakeVehicle(g){
+    var fixed = [];
+    g.updateMatrixWorld(true);
+    g.traverse(function(o){ if (o.isMesh && o.visible) fixed.push(o); });
+    var placed = fixed.map(function(o){
+      var m = new THREE.Mesh(o.geometry, o.material);
+      m.matrix.copy(o.matrixWorld); m.userData.placed = true;
+      return m;
+    });
+    fixed.forEach(function(o){ o.parent.remove(o); });
+    mergeByMaterial(placed).forEach(function(m){ g.add(m); });
+    return g;
+  }
   /* a Frankfurt Stadtbahn car: long, white, a dark window band, red trim */
   function buildTram(v){
     var L = v.len*U, W = v.wid*U, h = L/2, VMs = vehicleMats();
@@ -15481,6 +15596,7 @@ var GL3D = (function(){
     car.userData.cab.visible = false;
     car.userData.roofPanel.visible = false;
     car.userData.pillar.visible = false;
+    var firstPart = car.children.length;
     /* seats, floor and the rest of the inside, dark, covering the body top */
     part(new THREE.BoxGeometry(L*0.44, 0.40, W - 0.10), VMs.dash, -L*0.18, 0.87, 0, car);
     /* the footwells and centre console, under the wheel */
@@ -15607,6 +15723,13 @@ var GL3D = (function(){
       return { hand:hands[i], fore:fore, elbow:new THREE.Vector3(ex + 0.14, 0.84, dz + side*0.27) };
     });
     car.userData.arms = { column:column, grip:grip, wheel:wheel, list:arms };
+    /* everything fixed straight to the car (dashboard, vents, door cards,
+       lining...) becomes one mesh per material; the cluster, the wheel and
+       the arms stay live */
+    var live = [cluster].concat(arms.map(function(a){ return a.fore; }));
+    var fixed = car.children.slice(firstPart).filter(function(ch){ return ch.isMesh && live.indexOf(ch) < 0; });
+    fixed.forEach(function(ch){ car.remove(ch); });
+    mergeByMaterial(fixed).forEach(function(m){ m.castShadow = false; car.add(m); });
   }
   /* each frame: the hands turn with the wheel (to a point), the forearms follow */
   var armTmp = null;
@@ -15661,12 +15784,13 @@ var GL3D = (function(){
     cl.tex.needsUpdate = true;
   }
 
+  var navTick = 0;
   function vehicleMesh(v){
     var key = v.id + '|' + v.kind + '|' + (v.taxi ? 't' : v.color);
     var cur = dyn.meshes[v.id];
     if (cur && cur.userData.key === key) return cur;
     if (cur){ scene.remove(cur); }
-    var g = v.kind === 'tram' ? buildTram(v) : v.kind === 'bus' ? buildBus(v)
+    var g = v.kind === 'tram' ? bakeVehicle(buildTram(v)) : v.kind === 'bus' ? bakeVehicle(buildBus(v))
           : v.kind === 'bike' ? buildBike(v) : buildCar(v);
     if (v.isPlayer) buildCockpit(v, g);
     g.userData.key = key;
@@ -15680,6 +15804,8 @@ var GL3D = (function(){
       if (v.done) return;
       seen[v.id] = true;
       var g = vehicleMesh(v);
+      g.visible = v.isPlayer || Math.hypot(v.pos.x - world.player.pos.x, v.pos.y - world.player.pos.y) < 260*CFG.PPM;
+      if (!g.visible) return;
       g.position.set(v.pos.x*U, 0, v.pos.y*U);
       g.rotation.y = -v.pos.h;
       (g.userData.wheels || []).forEach(function(w, k){
@@ -15689,7 +15815,7 @@ var GL3D = (function(){
       });
       if (g.userData.steeringWheel) g.userData.steeringWheel.rotation.z = -(v.delta || 0) * 14;
       if (g.userData.arms) updateArms(g.userData.arms);
-      if (g.userData.navTex) g.userData.navTex.needsUpdate = true;
+      if (g.userData.navTex && (navTick++ & 1)) g.userData.navTex.needsUpdate = true;
       if (g.userData.cluster) drawCluster(g.userData.cluster, v.v*3.6/CFG.PPM, v.indicator, (t*2.2) % 1 < 0.55);
       /* a cyclist pedals while moving */
       if (g.userData.rider){
@@ -15763,6 +15889,7 @@ var GL3D = (function(){
           /* bounds generous enough for any pose, so a person off screen
              is skipped (culling a walking figure by its standing pose
              would cut off swinging arms and legs) */
+          var parts = fuseModel(root);
           root.traverse(function(o){
             if (!o.isSkinnedMesh) return;
             o.geometry.computeBoundingSphere();
@@ -15771,7 +15898,7 @@ var GL3D = (function(){
           var clip = function(name){
             return gltf.animations.filter(function(a){ return new RegExp(name + '$').test(a.name); })[0];
           };
-          people.models.push({ scene:root, height:Math.max(0.01, box.max.y - box.min.y), minY:box.min.y, key:k,
+          people.models.push({ scene:root, height:Math.max(0.01, box.max.y - box.min.y), minY:box.min.y, key:k, parts:parts,
                                female:/woman/.test(k), walk:clip('Walk'), idle:clip('Idle') || clip('Standing') });
           people.models.sort(function(a, b){ return a.key < b.key ? -1 : 1; });   // the same person every time
           if (--left === 0){ people.ready = true; people.version++; }
@@ -15782,6 +15909,48 @@ var GL3D = (function(){
   /* who someone is, from their one random number: about a fifth are
      older (grey hair, a little shorter and stooped, slower) */
   function isOld(look, kid){ return !kid && ((look*31.7) % 1) < 0.22; }
+  /* The models arrive as six or eight skinned meshes, one per material -
+     that many draws for every person, twice over with shadows. Fuse them
+     into one mesh on the same skeleton, and note for each vertex which
+     part (shirt, skin, hair...) it came from, so each person can still be
+     given their own colours. Returns the parts' materials, in order. */
+  function fuseModel(root){
+    var subs = [];
+    root.traverse(function(o){ if (o.isSkinnedMesh) subs.push(o); });
+    if (!subs.length) return [];
+    var names = ['position', 'normal', 'skinIndex', 'skinWeight'], total = 0, idxTotal = 0;
+    subs.forEach(function(s){ total += s.geometry.attributes.position.count; idxTotal += s.geometry.index ? s.geometry.index.count : s.geometry.attributes.position.count; });
+    var geo = new THREE.BufferGeometry(), part = new Uint8Array(total), index = new Uint32Array(idxTotal);
+    names.forEach(function(n){
+      var first = subs[0].geometry.attributes[n];
+      if (!first) return;
+      var arr = new first.array.constructor(total*first.itemSize), off = 0;
+      subs.forEach(function(s){ var a = s.geometry.attributes[n]; arr.set(a.array.subarray(0, a.count*a.itemSize), off); off += a.count*a.itemSize; });
+      geo.setAttribute(n, new THREE.BufferAttribute(arr, first.itemSize, first.normalized));
+    });
+    var vOff = 0, iOff = 0;
+    subs.forEach(function(s, k){
+      var n = s.geometry.attributes.position.count, ix = s.geometry.index;
+      part.fill(k, vOff, vOff + n);
+      if (ix) for (var i = 0; i < ix.count; i++) index[iOff++] = ix.getX(i) + vOff;
+      else for (var j = 0; j < n; j++) index[iOff++] = j + vOff;
+      vOff += n;
+    });
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
+    geo.userData.part = part;
+    var one = new THREE.SkinnedMesh(geo, personMat());
+    one.name = subs[0].name;
+    one.position.copy(subs[0].position); one.quaternion.copy(subs[0].quaternion); one.scale.copy(subs[0].scale);
+    subs[0].parent.add(one);
+    one.bind(subs[0].skeleton, subs[0].bindMatrix);
+    var mats = subs.map(function(s){ return Array.isArray(s.material) ? s.material[0] : s.material; });
+    subs.forEach(function(s){ s.parent.remove(s); });
+    return mats;
+  }
+  var PERSON_MAT = null;
+  function personMat(){
+    return PERSON_MAT || (PERSON_MAT = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.8, envMapIntensity:0.3 }));
+  }
   function buildModelPerson(look, kid){
     var mdl = people.models[Math.floor(look*997) % people.models.length];
     var old = isOld(look, kid), vary = (look*13.7) % 1;
@@ -15795,17 +15964,30 @@ var GL3D = (function(){
       if (!o.isMesh) return;
       o.castShadow = true;
       o.layers.set(PEOPLE_LAYER);                    // drawn and shadowed, but not in the small mirror
-      var recolor = function(m){
+      var colourOf = function(m){
         var c = null;
         if (/^Shirt/.test(m.name)) c = pick(SHIRTS, (look*7.3) % 1);
         else if (/^Pants/.test(m.name)) c = pick(TROUSERS, (look*3.7) % 1);
         else if (/^Hair/.test(m.name)) c = pick(old ? GREY_HAIR : HAIR, (look*9.1) % 1);
         else if (/^Dress/.test(m.name)) c = pick(DRESSES, (look*7.3) % 1);
         else if (/^Skin/.test(m.name)) c = pick(SKINS, (look*5.3) % 1);
-        if (!c) return m;
-        var n = m.clone(); n.color.set(c); return n;
+        return c ? new THREE.Color(c) : m.color;
       };
-      o.material = Array.isArray(o.material) ? o.material.map(recolor) : recolor(o.material);
+      /* everyone shares the model's fused mesh; only the colours are
+         this person's own, painted in part by part */
+      var src = o.geometry, part = src.userData.part, n = src.attributes.position.count;
+      var cols = mdl.parts.map(colourOf), col = new Float32Array(n*3);
+      for (var i = 0; i < n; i++){
+        var c = cols[part ? part[i] : 0] || cols[0];
+        col[i*3] = c.r; col[i*3 + 1] = c.g; col[i*3 + 2] = c.b;
+      }
+      var geo = new THREE.BufferGeometry();
+      Object.keys(src.attributes).forEach(function(k){ geo.setAttribute(k, src.attributes[k]); });
+      geo.setIndex(src.index);
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      geo.boundingSphere = src.boundingSphere; geo.boundingBox = src.boundingBox;
+      o.geometry = geo;
+      o.material = personMat();
     });
     var g = new THREE.Group();
     /* older people lean a little forward from the feet */
@@ -15817,7 +15999,8 @@ var GL3D = (function(){
     var walk = mdl.walk ? mixer.clipAction(mdl.walk) : null, idle = mdl.idle ? mixer.clipAction(mdl.idle) : null;
     [walk, idle].forEach(function(a){ if (a){ a.play(); a.setEffectiveWeight(0); a.time = look*a.getClip().duration; } });
     if (idle) idle.setEffectiveWeight(1);
-    g.userData = { model:true, mixer:mixer, walk:walk, idle:idle, version:people.version, lastT:null };
+    var skin = null; inst.traverse(function(o){ if (o.isMesh) skin = o; });
+    g.userData = { model:true, mixer:mixer, walk:walk, idle:idle, version:people.version, lastT:null, skin:skin };
     return g;
   }
 
@@ -15880,6 +16063,10 @@ var GL3D = (function(){
       if (g && people.ready && g.userData.version !== people.version){ scene.remove(g); g = null; }
       if (!g){ g = buildPerson(ped.look, ped.kid); scene.add(g); dyn.peds[k] = g; }
       var pt = ped.point();
+      var pd = Math.hypot(pt.x - world.player.pos.x, pt.y - world.player.pos.y);
+      g.visible = pd < 130*CFG.PPM;
+      if (!g.visible) return;
+      if (g.userData.skin) g.userData.skin.castShadow = pd < 45*CFG.PPM;
       g.position.set(pt.x*U, 0, pt.y*U);
       /* facing the way they walk across; waiting, they face the road */
       var q = Geo.rot90cw(Geo.ARM_VEC[ped.arm]);
@@ -15996,10 +16183,12 @@ var GL3D = (function(){
     VMs.tail.emissiveIntensity = night ? 1.4 : 0.25;
     /* move the real lights onto the lamps nearest the car */
     var p = world.player, px = p.pos.x*U, pz = p.pos.y*U;
-    var near = built.lamps.slice().sort(function(a, b){
+    /* by day the lamps are switched off altogether, so nothing is lit by them */
+    var near = !night ? [] : built.lamps.slice().sort(function(a, b){
       return Math.hypot(a.x - px, a.z - pz) - Math.hypot(b.x - px, b.z - pz);
     });
     lampLights.forEach(function(l, i){
+      l.visible = night;
       if (!night || !near[i]){ l.intensity = 0; return; }
       l.intensity = 3; l.position.copy(near[i]);
     });
@@ -16109,7 +16298,7 @@ var GL3D = (function(){
     if (mirror) return mirror;
     var rt = new THREE.WebGLRenderTarget(640, 200);
     rt.texture.encoding = THREE.sRGBEncoding;
-    var cam = new THREE.PerspectiveCamera(24, 3.2, 0.3, 900);
+    var cam = new THREE.PerspectiveCamera(24, 3.2, 0.3, 450);
     cam.rotation.order = 'YXZ';
     var ov = new THREE.Scene(), ocam = new THREE.OrthographicCamera(0, 1, 1, 0, -10, 10);
     var shadow = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.28 }));
@@ -16128,14 +16317,17 @@ var GL3D = (function(){
     var c = Math.cos(p.pos.h), s = Math.sin(p.pos.h);
     m.cam.position.set((p.pos.x + c*0.2*CFG.PPM)*U, 1.32, (p.pos.y + s*0.2*CFG.PPM)*U);
     m.cam.rotation.set(-0.03, -(p.pos.h + Math.PI) - Math.PI/2, 0);
-    var own = dyn.meshes[p.id];
-    if (own) own.visible = false;
-    renderer.shadowMap.autoUpdate = false;
-    renderer.setRenderTarget(m.rt);
-    renderer.render(scene, m.cam);
-    renderer.setRenderTarget(null);
-    renderer.shadowMap.autoUpdate = true;
-    if (own) own.visible = true;
+    m.tick = (m.tick || 0) + 1;
+    if (m.tick % 2 === 1){
+      var own = dyn.meshes[p.id];
+      if (own) own.visible = false;
+      renderer.shadowMap.autoUpdate = false;
+      renderer.setRenderTarget(m.rt);
+      renderer.render(scene, m.cam);
+      renderer.setRenderTarget(null);
+      renderer.shadowMap.autoUpdate = true;
+      if (own) own.visible = true;
+    }
 
     var mw = Math.min(w*0.36, 320) * (big ? 1.45 : 1), mh = mw/3.2;
     var cx = w/2, cy = h - 18 - mh/2 - (big ? 0 : 4);
@@ -16202,7 +16394,54 @@ var GL3D = (function(){
   function setQuality(q){
     quality = q === 'fast' ? 'fast' : 'high';
     if (!renderer) return;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality === 'fast' ? 1 : 1.5));
+    applyResolution();
+  }
+  /* If the machine cannot hold a smooth rate, draw the 3D picture a
+     little smaller and let the browser stretch it - the interface on top
+     stays sharp. It creeps back up when there is headroom, and remembers
+     for a while where it last had to back off. */
+  var pace = { last:0, acc:0, n:0, scale:1, good:0, ceiling:1, ceilingUntil:0, lite:false, slow:0 };
+  var PACE_KEY = 'fahrschule.pace.v1';
+  try {
+    var saved = JSON.parse(localStorage.getItem(PACE_KEY) || 'null');
+    if (saved && saved.scale >= 0.55 && saved.scale <= 1){ pace.scale = saved.scale; pace.lite = !!saved.lite; }
+  } catch (e){}
+  /* still slow at a small picture: drop the costly smoothing of the
+     off-screen picture and halve the shadow map */
+  function applyLite(){
+    if (post){ post.W = 0; }
+    if (sun){
+      var size = pace.lite ? 1024 : (Math.min(window.innerWidth, window.innerHeight) < 700 ? 1024 : 2048);
+      if (sun.shadow.mapSize.x !== size){
+        sun.shadow.mapSize.set(size, size);
+        if (sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map = null; }
+      }
+    }
+  }
+  function applyResolution(){
+    var base = Math.min(window.devicePixelRatio || 1, quality === 'fast' ? 1 : 1.5);
+    renderer.setPixelRatio(base * pace.scale);
+  }
+  function adaptResolution(){
+    var now = performance.now(), dt = now - pace.last;
+    pace.last = now;
+    if (dt <= 0 || dt > 250) return;                    // the tab was away
+    pace.acc += dt; pace.n++;
+    if (pace.acc < 1000) return;
+    var avg = pace.acc/pace.n, s = pace.scale;
+    pace.acc = 0; pace.n = 0;
+    if (now > pace.ceilingUntil) pace.ceiling = 1;
+    var changed = false;
+    if (avg > 21){                                      // under about 48 a second
+      pace.good = 0;
+      if (s > 0.55){ pace.ceiling = s - 0.05; pace.ceilingUntil = now + 30000; s = Math.max(0.55, s - 0.15); }
+      if (s <= 0.75 && !pace.lite && ++pace.slow >= 2){ pace.lite = true; applyLite(); changed = true; }
+    } else if (avg < 17.6 && s < pace.ceiling){
+      pace.slow = 0;
+      if (++pace.good >= 4){ s = Math.min(pace.ceiling, s + 0.1); pace.good = 0; }
+    } else { pace.good = 0; pace.slow = 0; }
+    if (s !== pace.scale){ pace.scale = s; applyResolution(); lastW = 0; changed = true; }
+    if (changed){ try { localStorage.setItem(PACE_KEY, JSON.stringify({ scale:pace.scale, lite:pace.lite })); } catch (e){} }
   }
   var QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
   var AO_FS = [
@@ -16275,7 +16514,7 @@ var GL3D = (function(){
     var hw = Math.max(1, W >> 1), hh = Math.max(1, H >> 1);
     var depth = new THREE.DepthTexture(W, H);
     p.scene = new THREE.WebGLRenderTarget(W, H, { type:THREE.HalfFloatType, depthTexture:depth,
-                                                  samples:renderer.capabilities.isWebGL2 ? 4 : 0 });
+                                                  samples:renderer.capabilities.isWebGL2 && !pace.lite ? 4 : 0 });
     p.ao = new THREE.WebGLRenderTarget(hw, hh, { depthBuffer:false });
     p.aoBlur = new THREE.WebGLRenderTarget(hw, hh, { depthBuffer:false });
     p.ldr = new THREE.WebGLRenderTarget(W, H, { depthBuffer:false });
@@ -16428,9 +16667,12 @@ var GL3D = (function(){
     sun.position.copy(sun.target.position).addScaledVector(sunDir, 150);
     /* our own headlights after dark */
     headlamp.intensity = night ? 18 : 0;
+    headlamp.visible = night;
     headlamp.position.set(cx + c*2.2, 0.75, cz + s*2.2);
     headlamp.target.position.set(cx + c*30, 0, cz + s*30);
 
+    updateCulling(camera.position.x, camera.position.z);
+    adaptResolution();
     if (quality === 'high') renderPost(rm.v);
     else renderer.render(scene, camera);
     if (world.map) drawMirror(world, yaw, w, h, opts && opts.mirror);
@@ -17201,7 +17443,8 @@ var Sound = (function(){
         ctx.restore();
         GL3D.frame(state.world, state.yaw, W, H, { mirror:look.mirror });
       } else POV.frame(ctx, W, H, state.world, state.yaw);
-      drawMinimap();
+      /* the little map changes slowly: every second frame is plenty */
+      if ((state.frameNo = (state.frameNo || 0) + 1) & 1) drawMinimap();
     } else {
       gl.classList.add('hidden');
       Render.frame(ctx, W, H, state.world, state.screen === 'brief');

@@ -561,7 +561,8 @@
         ctx.restore();
         GL3D.frame(state.world, state.yaw, W, H, { mirror:look.mirror });
       } else POV.frame(ctx, W, H, state.world, state.yaw);
-      drawMinimap();
+      /* the little map changes slowly: every second frame is plenty */
+      if ((state.frameNo = (state.frameNo || 0) + 1) & 1) drawMinimap();
     } else {
       gl.classList.add('hidden');
       Render.frame(ctx, W, H, state.world, state.screen === 'brief');
