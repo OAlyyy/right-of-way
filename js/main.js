@@ -472,10 +472,76 @@
   }
 
   /* ---------------- loop ---------------- */
+  /* ---------------- a game controller ---------------- */
+  /* Any pad the browser understands (Xbox, PlayStation, most USB ones):
+     left stick steers, the triggers are the pedals - as far down as you
+     press them - the right stick turns your head, the bumpers work the
+     indicators. Buttons act once per press. */
+  var pad = { was:{}, steering:false, looking:false, used:false, rumbled:null };
+  function readPad(){
+    var list = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (var i = 0; i < list.length; i++) if (list[i] && list[i].connected && list[i].buttons.length >= 8) return list[i];
+    return null;
+  }
+  function dead(v, d){ return Math.abs(v) < d ? 0 : (v - Math.sign(v)*d)/(1 - d); }
+  function pollPad(){
+    var gp = readPad();
+    input.gas = null; input.brakeAmt = null;
+    if (!gp){ pad.mirror = false; return; }
+    function val(i){ var b = gp.buttons[i]; return b ? (typeof b === 'object' ? b.value : b) : 0; }
+    function hit(i){ var down = val(i) > 0.5, was = pad.was[i]; pad.was[i] = down; return down && !was; }
+    var A = hit(0), B = hit(1), X = hit(2), LB = hit(4), RB = hit(5), BACK = hit(8), START = hit(9);
+    if (A || B || X || LB || RB || START) pad.used = true;
+    if (typeof Sound !== 'undefined' && pad.used) Sound.unlock();
+
+    /* screens: A goes on, B goes back */
+    if (state.screen === 'brief'){ if (A || START) beginDriving(); return; }
+    if (state.screen === 'result'){
+      if (A || START){ if (state.mode === 'drive') startDrive(); else startScenario(state.scIndex); }
+      if (B) toMenu();
+      return;
+    }
+    if (state.screen !== 'play' || !state.world) return;
+    /* a thump in the hands when the examiner stops you */
+    var f = state.world.pending;
+    if (f && pad.rumbled !== f && gp.vibrationActuator && gp.vibrationActuator.playEffect){
+      pad.rumbled = f;
+      try { gp.vibrationActuator.playEffect('dual-rumble', { duration:260, strongMagnitude:0.7, weakMagnitude:0.5 }); } catch (e){}
+    }
+    /* the examiner's card: A rewinds (after a beat, like the keys), B drives on */
+    if (state.mode === 'drive' && !el('overlay-fault').classList.contains('hidden')){
+      if (performance.now() - (state.faultShownAt || 0) > 900){
+        if (A){ if (state.world.canRewind()) rewindDrive(); else resumeDrive(); }
+        else if (B) resumeDrive();
+      }
+      return;
+    }
+    /* pedals */
+    var g = dead(val(7), 0.04), b = dead(val(6), 0.04);
+    if (g > 0){ input.gas = g; pad.used = true; }
+    if (b > 0){ input.brakeAmt = b; pad.used = true; }
+    el('pedal-gas').classList.toggle('down', g > 0 || input.throttle);
+    el('pedal-brake').classList.toggle('down', b > 0 || input.brake);
+    /* steering: gentle near the middle, full lock at the edge */
+    var sx = dead(gp.axes[0] || 0, 0.1);
+    if (sx !== 0){ input.steerAbs = Math.sign(sx)*Math.pow(Math.abs(sx), 1.6); pad.steering = true; pad.used = true; }
+    else if (pad.steering){ input.steerAbs = null; pad.steering = false; }
+    /* your head: the right stick, as far as you push it */
+    var lx = dead(gp.axes[2] || 0, 0.18);
+    if (lx !== 0){ state.padYaw = lx*MAX_YAW; pad.looking = true; }
+    else if (pad.looking){ state.padYaw = null; pad.looking = false; }
+    pad.mirror = val(3) > 0.5;                                          // Y: the mirror, while held
+    if (LB) setIndicator('left');
+    if (RB) setIndicator('right');
+    if (X) nextCamera();
+    if (BACK) toggleView();
+    if (START){ if (state.mode === 'drive') startDrive(); else startScenario(state.scIndex); }
+  }
   function tick(now){
     requestAnimationFrame(tick);
     var dt = Math.min(0.05, (now - state.last)/1000);
     state.last = now;
+    pollPad();
     if (state.screen !== 'play' || !state.world){ if (typeof Sound !== 'undefined') Sound.idle(); return; }
 
     /* head movement: keys, buttons or a drag on the road */
@@ -483,6 +549,7 @@
       var t = 0;
       if (look.left)  t -= MAX_YAW;
       if (look.right) t += MAX_YAW;
+      if (state.padYaw !== null && state.padYaw !== undefined) t = state.padYaw;
       state.yawTarget = t;
     }
     state.yaw += (state.yawTarget - state.yaw) * Math.min(1, dt*8);
@@ -490,7 +557,7 @@
 
     /* the examiner sees where you look: head turned, mirror checked */
     input.yaw = state.yaw;
-    input.mirror = look.mirror;
+    input.mirror = look.mirror || !!pad.mirror;
     input.steer = (wheelKeys.right ? 1 : 0) - (wheelKeys.left ? 1 : 0);
     /* the indicator stalk flicks back after a turn, as in a real car */
     if (state.world.indicatorOff){ input.indicator = 'off'; state.world.indicatorOff = false; }
@@ -562,7 +629,7 @@
         ctx.setTransform(1,0,0,1,0,0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
-        GL3D.frame(state.world, state.yaw, W, H, { mirror:look.mirror });
+        GL3D.frame(state.world, state.yaw, W, H, { mirror:look.mirror || !!pad.mirror });
       } else POV.frame(ctx, W, H, state.world, state.yaw);
       /* the little map changes slowly: every second frame is plenty */
       if ((state.frameNo = (state.frameNo || 0) + 1) & 1) drawMinimap();

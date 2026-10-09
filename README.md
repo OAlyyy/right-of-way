@@ -62,6 +62,7 @@ watches — speed, indicators, and above all who goes first.
 | `G` | graphics: high (post-processing) / fast |
 | `N` | sound on / off |
 | `C` | camera: inside / behind the car / far behind |
+| controller | left stick steers, RT / LT are the pedals (as far as you press), right stick turns your head, LB / RB indicators, Y mirror (held), X camera, Back map view, Start restart; A rewinds and B drives on at the fault card |
 | `T` | weather: clear / evening sun / rain |
 | `X` | indicator off |
 | `V` | switch driver view ⇄ map view |

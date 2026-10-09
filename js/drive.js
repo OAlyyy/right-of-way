@@ -439,7 +439,7 @@ var Drive = (function(){
     }
     /* just rewound: the town waits for you to set off again */
     if (this.hold){
-      if (!input.throttle && !input.brake) return;
+      if (!input.throttle && !input.brake && !(input.gas > 0.1) && !(input.brakeAmt > 0.1)) return;
       this.hold = null;
     }
     /* where the driver has looked, and when: a glance over a shoulder is

@@ -583,11 +583,18 @@ var Sim = (function(){
   };
 
   World.prototype.drivePlayer = function(veh, dt, input){
-    if (input.throttle) veh.v += CFG.ACC*dt;
-    else if (input.brake) veh.v -= CFG.BRAKE*dt;
+    /* A key is a pedal to the floor. A controller's trigger says how far
+       the pedal is down (input.gas, input.brakeAmt, 0..1): the brake bites
+       in proportion, and a part-pressed accelerator settles at a speed
+       rather than climbing for ever, as a real one does against drag. */
+    var gas = input.gas !== undefined && input.gas !== null ? input.gas : (input.throttle ? 1 : 0);
+    var brk = input.brakeAmt !== undefined && input.brakeAmt !== null ? input.brakeAmt : (input.brake ? 1 : 0);
+    if (brk > 0.03) veh.v -= (CFG.COAST + (CFG.BRAKE - CFG.COAST)*brk)*dt;
+    else if (gas >= 0.999) veh.v += CFG.ACC*dt;
+    else if (gas > 0.03 && veh.v < veh.maxV*Math.pow(gas, 0.8)) veh.v += CFG.ACC*(0.35 + 0.65*gas)*dt;
     else veh.v -= CFG.COAST*dt;
     veh.v = Geo.clamp(veh.v, 0, veh.maxV);
-    veh.brakeLight = !!input.brake;
+    veh.brakeLight = brk > 0.03;
     veh.indicator = input.indicator;
     this.maxSpeed = Math.max(this.maxSpeed, veh.v);
   };
