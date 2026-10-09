@@ -10,7 +10,7 @@ const out = {};
 const dirs = [['tex', '.jpg', 'image/jpeg'], ['models', '.glb', 'model/gltf-binary'],
               ['hdri', '.hdr', 'application/octet-stream']];
 /* the models the game uses (the pack has a fourth, near-identical man) */
-const MODELS = ['man', 'man_suit', 'man_sleeves', 'woman', 'woman_dress'];
+const MODELS = ['man', 'man_suit', 'man_sleeves', 'woman', 'woman_dress', 'hand_left', 'hand_right'];
 for (const [dir, ext, mime] of dirs){
   const full = path.join(ROOT, 'assets', dir);
   if (!fs.existsSync(full)) continue;

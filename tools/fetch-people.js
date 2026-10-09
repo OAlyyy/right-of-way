@@ -13,7 +13,10 @@ const FILES = {
   'assets/models/man.glb':         'https://static.poly.pizza/3746be88-6799-4817-929b-6bc067c47caa.glb',
   'assets/models/man_sleeves.glb': 'https://static.poly.pizza/e6019b9f-aed0-400c-8df4-ce5b648e9b82.glb',
   'assets/models/woman.glb':       'https://static.poly.pizza/51d5abdd-bb87-4b8d-9967-21738ffb8437.glb',
-  'assets/models/woman_dress.glb': 'https://static.poly.pizza/a642af96-e239-4c5f-b50d-7661ff51deec.glb'
+  'assets/models/woman_dress.glb': 'https://static.poly.pizza/a642af96-e239-4c5f-b50d-7661ff51deec.glb',
+  /* the driver's hands: the WebXR "generic hand" models (MIT, (c) Amazon) */
+  'assets/models/hand_left.glb':  'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0.19/dist/profiles/generic-hand/left.glb',
+  'assets/models/hand_right.glb': 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0.19/dist/profiles/generic-hand/right.glb'
 };
 (async () => {
   for (const [out, url] of Object.entries(FILES)){

@@ -111,6 +111,8 @@ var GL3D = (function(){
 
     loadTextures();
     loadPeople();
+    loadHands();
+    loadConcept();
     syncTheme();
     ok = true;
     return ok;
@@ -2444,26 +2446,92 @@ var GL3D = (function(){
     });
     return g;
   }
-  /* what you see of your own car from the driver's seat: a shaped
-     dashboard with the instruments in a pod, a centre screen showing the
-     satnav, vents and a trim strip, door cards, the A-pillars and roof
-     lining, and a leather wheel with your hands on it */
+  /* What you see of your own car from the driver's seat, in the manner of
+     a current executive saloon: a low leather dashboard with an open-pore
+     wood band and a line of ambient light running across it and on into
+     the doors; one long curved display - instruments ahead of you, the
+     satnav angled towards you - a head-up display in the windscreen; a
+     thick sport wheel with button pads, shift paddles and stalks; and
+     your own hands on it, cuffs and wristwatch and all. */
   var CABIN = null;
+  /* a tiling normal map of fine grain, for leather and cloth */
+  function grainNormal(seed, blur, strength){
+    var S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+    var x = c.getContext('2d'), R = rng(seed), h = new Float32Array(S*S), t = new Float32Array(S*S), i, k;
+    for (i = 0; i < S*S; i++) h[i] = R();
+    for (k = 0; k < blur; k++){
+      for (var yy = 0; yy < S; yy++) for (var xx = 0; xx < S; xx++){
+        var a = 0;
+        for (var oy = -1; oy <= 1; oy++) for (var ox = -1; ox <= 1; ox++) a += h[((yy + oy + S) % S)*S + (xx + ox + S) % S];
+        t[yy*S + xx] = a/9;
+      }
+      h.set(t);
+    }
+    var img = x.createImageData(S, S);
+    for (var py = 0; py < S; py++) for (var px = 0; px < S; px++){
+      var dx = h[py*S + (px + 1) % S] - h[py*S + (px + S - 1) % S], dy = h[((py + 1) % S)*S + px] - h[((py + S - 1) % S)*S + px];
+      var o = (py*S + px)*4;
+      img.data[o] = 128 - dx*strength*127; img.data[o + 1] = 128 - dy*strength*127; img.data[o + 2] = 255; img.data[o + 3] = 255;
+    }
+    x.putImageData(img, 0, 0);
+    var tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(7, 7);
+    return tex;
+  }
+  var BADGE = null;
+  function badgeMat(){
+    if (BADGE) return BADGE;
+    var c = document.createElement('canvas'); c.width = c.height = 256;
+    var x = c.getContext('2d');
+    var ring = x.createLinearGradient(0, 0, 256, 256);
+    ring.addColorStop(0, '#f4f6f8'); ring.addColorStop(0.5, '#8d949c'); ring.addColorStop(1, '#e6e9ec');
+    x.fillStyle = ring; x.beginPath(); x.arc(128, 128, 128, 0, 6.3); x.fill();
+    var face = x.createRadialGradient(100, 90, 10, 128, 128, 112);
+    face.addColorStop(0, '#1d3f78'); face.addColorStop(1, '#0a1730');
+    x.fillStyle = face; x.beginPath(); x.arc(128, 128, 108, 0, 6.3); x.fill();
+    x.strokeStyle = '#c9ced4'; x.lineWidth = 3; x.beginPath(); x.arc(128, 128, 92, 0, 6.3); x.stroke();
+    x.fillStyle = '#eef1f4'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.font = 'italic bold 96px Georgia, serif'; x.fillText('RW', 128, 134);
+    var t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+    t.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 1;
+    return (BADGE = new THREE.MeshStandardMaterial({ map:t, metalness:0.6, roughness:0.25, envMapIntensity:0.8 }));
+  }
+  function woodTexture(){
+    var c = document.createElement('canvas'); c.width = 512; c.height = 64;
+    var x = c.getContext('2d'), R = rng(5);
+    x.fillStyle = '#4a3b30'; x.fillRect(0, 0, 512, 64);
+    for (var i = 0; i < 90; i++){
+      x.strokeStyle = 'rgba(' + (R() < 0.5 ? '20,14,10' : '120,96,74') + ',' + (0.10 + R()*0.22).toFixed(2) + ')';
+      x.lineWidth = 0.6 + R()*1.4;
+      var y = R()*64;
+      x.beginPath(); x.moveTo(0, y); x.bezierCurveTo(170, y + (R() - 0.5)*7, 340, y + (R() - 0.5)*7, 512, y + (R() - 0.5)*4); x.stroke();
+    }
+    var t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  }
   function cabinMats(){
     if (CABIN) return CABIN;
     function std(o){ return new THREE.MeshStandardMaterial(o); }
+    var leatherN = grainNormal(3, 1, 9), clothN = grainNormal(8, 0, 5), ns = new THREE.Vector2(0.55, 0.55);
     CABIN = {
-      dash:    std({ color:0x26272a, roughness:0.88, envMapIntensity:0.15 }),
-      dashTop: std({ color:0x1d1e20, roughness:0.95, envMapIntensity:0.1 }),
-      trim:    std({ color:0x8e9298, metalness:0.7, roughness:0.35 }),
-      piano:   std({ color:0x0b0c0d, roughness:0.12, envMapIntensity:0.6 }),
-      vent:    std({ color:0x0e0f10, roughness:0.7 }),
-      door:    std({ color:0x2e2f33, roughness:0.85, envMapIntensity:0.12 }),
-      fabric:  std({ color:0x6f6d69, roughness:1.0, envMapIntensity:0.1 }),
-      pillar:  std({ color:0x3b3c3f, roughness:0.95, envMapIntensity:0.1 }),
-      leather: std({ color:0x18181a, roughness:0.55, envMapIntensity:0.3 }),
-      skin:    std({ color:0xc8987a, roughness:0.7, envMapIntensity:0.2 }),
-      sleeve:  std({ color:0x2b3342, roughness:0.9, envMapIntensity:0.1 })
+      dash:    std({ color:0x232427, roughness:0.72, envMapIntensity:0.2, normalMap:leatherN, normalScale:ns }),
+      dashTop: std({ color:0x1a1b1d, roughness:0.85, envMapIntensity:0.12, normalMap:leatherN, normalScale:ns }),
+      trim:    std({ color:0xb4b8bd, metalness:0.9, roughness:0.28 }),                 // satin aluminium
+      wood:    std({ map:woodTexture(), roughness:0.5, envMapIntensity:0.5 }),
+      piano:   std({ color:0x08090a, roughness:0.08, envMapIntensity:0.9 }),
+      vent:    std({ color:0x0c0d0e, roughness:0.7 }),
+      door:    std({ color:0x2a2b2f, roughness:0.75, envMapIntensity:0.15, normalMap:leatherN, normalScale:ns }),
+      fabric:  std({ color:0x2c2d30, roughness:1.0, envMapIntensity:0.08, normalMap:clothN, normalScale:ns }),
+      pillar:  std({ color:0x303134, roughness:1.0, envMapIntensity:0.08, normalMap:clothN, normalScale:ns }),
+      leather: std({ color:0x151516, roughness:0.5, envMapIntensity:0.35, normalMap:leatherN, normalScale:ns }),
+      stitch:  std({ color:0xb9b2a4, roughness:0.8 }),
+      ambient: std({ color:0x0a1420, emissive:0x4aa8ff, emissiveIntensity:0.35, roughness:0.4 }),
+      skin:    new THREE.MeshPhysicalMaterial({ color:0xc99878, roughness:0.62, sheen:0.5, sheenColor:new THREE.Color(0xff9a80),
+                                                sheenRoughness:0.6, envMapIntensity:0.25 }),
+      nail:    std({ color:0xe2bfae, roughness:0.35 }),
+      sleeve:  std({ color:0x23272f, roughness:0.95, envMapIntensity:0.08, normalMap:clothN, normalScale:ns }),
+      cuff:    std({ color:0xeef0f2, roughness:0.8, normalMap:clothN, normalScale:ns }),
+      watch:   std({ color:0xc9ccd1, metalness:1, roughness:0.2 }),
+      dial:    std({ color:0x0c1830, roughness:0.15, envMapIntensity:1 })
     };
     return CABIN;
   }
@@ -2477,162 +2545,507 @@ var GL3D = (function(){
     g.computeVertexNormals();
     return g;
   }
+  /* a hand gripping the rim. In its own frame x points out from the hub,
+     y runs along the rim and z away from you; up is +1 for the hand whose
+     thumb lies towards the top of the wheel on the +y side. */
+  function buildHand(C, up){
+    var hand = new THREE.Group(), RIM = 0.027;
+    function add(geo, mat, x, y, z){ var m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); hand.add(m); return m; }
+    /* four fingers, each curled over the top of the rim and round behind it */
+    var widths = [0.0098, 0.0102, 0.0098, 0.0086], reach = [1.42, 1.5, 1.46, 1.36];
+    for (var f = 0; f < 4; f++){
+      var r = widths[f], y = up*(0.032 - f*0.0205);
+      var curl = new THREE.TorusGeometry(RIM + r*0.92, r, 10, 18, Math.PI*reach[f]).rotateX(Math.PI/2).rotateY(Math.PI*0.36);
+      add(curl, C.skin, 0, y, 0);
+      /* the knuckle, proud of the back of the hand, and the first joint */
+      add(new THREE.SphereGeometry(r*1.18, 10, 8), C.skin, (RIM + r)*Math.cos(-Math.PI*0.36), y, (RIM + r)*Math.sin(-Math.PI*0.36));
+      add(new THREE.SphereGeometry(r*1.06, 10, 8), C.skin, (RIM + r*0.95)*Math.cos(Math.PI*0.2), y, (RIM + r*0.95)*Math.sin(Math.PI*0.2));
+    }
+    /* the back of the hand, sloping down from the knuckles to the wrist */
+    var back = add(new THREE.SphereGeometry(0.043, 18, 14).scale(0.86, 1.0, 0.36), C.skin, 0.03, 0, -0.047);
+    back.rotation.y = -0.62;
+    var heel = add(new THREE.SphereGeometry(0.036, 14, 10).scale(1.0, 1.0, 0.55), C.skin, 0.058, -up*0.004, -0.066);
+    heel.rotation.y = -0.75;
+    /* the thumb: its ball, then two joints lying along the near face of the rim */
+    add(new THREE.SphereGeometry(0.02, 12, 10).scale(1, 1.25, 0.95), C.skin, 0.014, up*0.03, -0.043);
+    var cap = THREE.CapsuleGeometry ? function(r, l){ return new THREE.CapsuleGeometry(r, l, 4, 10); }
+                                    : function(r, l){ return new THREE.CylinderGeometry(r, r, l + r, 10); };
+    var t1 = add(cap(0.0112, 0.03), C.skin, -0.002, up*0.052, -0.036); t1.rotation.z = up*0.3; t1.rotation.x = -up*0.12;
+    var t2 = add(cap(0.0102, 0.022), C.skin, -0.012, up*0.082, -0.032); t2.rotation.z = up*0.42;
+    var nail = add(new THREE.SphereGeometry(0.0088, 10, 8).scale(1, 1.25, 0.32), C.nail, -0.017, up*0.091, -0.0405); nail.rotation.z = up*0.42;
+    /* where the forearm meets it */
+    var wrist = new THREE.Object3D(); wrist.position.set(0.082, -up*0.006, -0.082); hand.add(wrist);
+    hand.userData.wrist = wrist;
+    return hand;
+  }
+  /* ---------------- your own car: an artist's model ---------------- */
+  /* The Khronos "Car Concept" (Darmstadt Graphics Group, model by Eric
+     Chadwick, CC-BY 4.0): a complete modern car, inside and out - dash,
+     wheel, seats, pedals, door cards. It is a centre-seat car: you sit in
+     the middle. At 12 MB it is too big to pack into the page, so it is
+     fetched on its own; until it arrives, or where it cannot be fetched
+     (the single-file build, a page opened from disk), the built car and
+     cabin above stand in. */
+  var CONCEPT = { kit:null, version:0, S:0.9, mid:0.24, left:0.40, eye:[0.40, 0.985, 0.41], wheelAt:[0.40, 0.65, 0.93], tilt:0.42, rim:0.168 };
+  function loadConcept(){
+    if (typeof THREE.GLTFLoader === 'undefined' || typeof fetch !== 'function') return;
+    if (typeof location !== 'undefined' && location.protocol === 'file:') return;
+    var urls = ['assets/models/car_concept.glb', '../assets/models/car_concept.glb'];
+    (function next(i){
+      if (i >= urls.length) return;
+      fetch(urls[i]).then(function(r){ if (!r.ok) throw 0; return r.arrayBuffer(); }).then(function(buf){
+        new THREE.GLTFLoader().parse(buf, '', function(gltf){ prepareConcept(gltf); }, function(){});
+      }).catch(function(){ next(i + 1); });
+    })(0);
+  }
+  function prepareConcept(gltf){
+    var root = gltf.scene, jobs = [], WANT = 2;                     // the "Torched Graphite" finish
+    root.traverse(function(o){
+      if (!o.isMesh) return;
+      var ext = o.userData.gltfExtensions && o.userData.gltfExtensions.KHR_materials_variants;
+      var map = ext && ext.mappings && ext.mappings.filter(function(m){ return m.variants.indexOf(WANT) >= 0; })[0];
+      if (map) jobs.push(gltf.parser.getDependency('material', map.material).then(function(mat){ o.material = mat; }));
+    });
+    Promise.all(jobs).catch(function(){}).then(function(){
+      root.updateMatrixWorld(true);
+      /* each wheel on a pivot at its hub, so it can spin and the front pair steer */
+      var spin = [];
+      ['WheelFrontL', 'WheelFrontR', 'WheelRearL', 'WheelRearR'].forEach(function(n){
+        var node = root.getObjectByName(n);
+        if (!node) return;
+        var rim = root.getObjectByName(n + 'Rim') || node;
+        var c = new THREE.Box3().setFromObject(rim).getCenter(new THREE.Vector3());
+        var hub = new THREE.Group(); hub.name = 'hub_' + n; hub.rotation.order = 'YXZ';
+        hub.position.copy(c); root.add(hub); hub.updateMatrixWorld(true);
+        /* everything of this wheel that turns: tyre, rim and brake disc */
+        [node, rim, root.getObjectByName(n + 'BrakeDisc')].forEach(function(p){ if (p && p.parent !== hub) hub.attach(p); });
+        spin.push(hub.name);
+      });
+      /* glass you can see through without a second pass over the scene */
+      var seen = [];
+      root.traverse(function(o){
+        if (!o.isMesh) return;
+        [].concat(o.material).forEach(function(m){
+          if (seen.indexOf(m) >= 0) return;
+          seen.push(m);
+          if (m.transmission > 0){ m.transmission = 0; m.transparent = true; m.opacity = 0.12; m.depthWrite = false; m.roughness = 0.05; m.color.set(0xcfdde4); }
+          if (/^Brakelight/.test(m.name)) CONCEPT.brakeMat = m;
+        });
+      });
+      CONCEPT.kit = { scene:root, spin:spin };
+      CONCEPT.version++;
+    });
+  }
+  /* model coordinates (x left, y up, z forward) to the car's (x forward, y up, z right) */
+  function fromModel(x, y, z){ var C = CONCEPT; return new THREE.Vector3((z - C.mid)*C.S, y*C.S, -x*C.S); }
+  var STEER_PARTS = ['InteriorSteeringWheel01', 'InteriorSteeringWheel02', 'InteriorSteeringWheel03', 'InteriorSteeringWheel04',
+                     'InteriorSteeringEmblem', 'InteriorSteeringHandleL', 'InteriorSteeringHandleR'];
+  var DRIVE_PARTS = STEER_PARTS.concat(['InteriorSteeringDash', 'InteriorSteeringDashColumn', 'InteriorSteeringBase', 'InteriorSteeringCylinder',
+                    'InteriorPedalAccel', 'InteriorPedalAccelArm', 'InteriorPedalBrake', 'InteriorPedalBrakeArm']);
+  function buildConceptCar(v){
+    var K = CONCEPT, VMs = vehicleMats(), g = new THREE.Group();
+    var holder = new THREE.Group(), model = K.kit.scene.clone(true);
+    holder.rotation.y = Math.PI/2; holder.scale.setScalar(K.S); holder.position.x = -K.mid*K.S;
+    holder.add(model); g.add(holder);
+    /* The model is a centre-seat car. Its driving position - wheel, instrument
+       pod, column, pedals - is made of separate parts, so it is moved across
+       to the left, where a driver sits in Germany (CC-BY allows the change). */
+    g.updateMatrixWorld(true);
+    var movers = DRIVE_PARTS.map(function(n){ return model.getObjectByName(n); }).filter(Boolean);
+    movers.forEach(function(o){
+      for (var a = o.parent; a; a = a.parent) if (movers.indexOf(a) >= 0) return;     // it moves with its parent
+      /* a step to the car's left, whatever way this part's own axes point */
+      var wp = o.getWorldPosition(new THREE.Vector3());
+      wp.z -= K.left*K.S;
+      o.position.copy(o.parent.worldToLocal(wp));
+    });
+    g.updateMatrixWorld(true);
+    /* the wheel turns on a pivot lying along its column; the hands go on the same pivot */
+    var column = new THREE.Group();
+    column.position.copy(fromModel(K.wheelAt[0], K.wheelAt[1], K.wheelAt[2]));
+    var zAxis = new THREE.Vector3(Math.cos(K.tilt), -Math.sin(K.tilt), 0), xAxis = new THREE.Vector3(0, 0, -1);
+    column.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, new THREE.Vector3().crossVectors(zAxis, xAxis), zAxis));
+    var wheel = new THREE.Group();
+    column.add(wheel); g.add(column); g.updateMatrixWorld(true);
+    STEER_PARTS.forEach(function(n){ var o = model.getObjectByName(n); if (o) wheel.attach(o); });
+    /* everything else that never moves: one mesh per material */
+    var hubs = K.kit.spin.map(function(n){ return model.getObjectByName(n); }).filter(Boolean);
+    var fixed = [];
+    model.traverse(function(o){
+      if (!o.isMesh) return;
+      for (var p = o.parent; p; p = p.parent) if (hubs.indexOf(p) >= 0) return;
+      fixed.push(o);
+    });
+    var placed = fixed.map(function(o){
+      var m = new THREE.Mesh(o.geometry, o.material); m.matrix.copy(o.matrixWorld); m.userData.placed = true; return m;
+    });
+    fixed.forEach(function(o){ o.parent.remove(o); });
+    mergeByMaterial(placed).forEach(function(m){ m.receiveShadow = true; g.add(m); });
+    g.traverse(function(o){ if (o.isMesh){ o.castShadow = true; } });
+    g.userData.concept = { column:column, wheel:wheel, hubs:hubs };
+    g.userData.wheels = [];
+    /* brake lights: the model's own, turned up; indicators: small lamps at the corners */
+    var bm = K.brakeMat;
+    g.userData.brake = [{ set visible(on){ if (bm) bm.emissiveIntensity = on ? 6 : 1; } }];
+    g.userData.blink = { left:[], right:[] };
+    var L = 4.36*K.S, W = 2.0*K.S, lamp = new THREE.BoxGeometry(0.05, 0.05, 0.16);
+    [[L/2 - 0.12 - K.mid*K.S + K.mid*K.S, 0.58], [-(L/2 - 0.1), 0.86]].forEach(function(pos){
+      [-1, 1].forEach(function(side){
+        var m = part(lamp, VMs.blink, pos[0], pos[1]*K.S/0.9*0.9, side*(W/2 - 0.16), g);
+        m.visible = false; m.castShadow = false;
+        g.userData.blink[side < 0 ? 'left' : 'right'].push(m);
+      });
+    });
+    return g;
+  }
+  /* inside the concept car: its own cabin is all there; we add your hands,
+     the live instruments on its binnacle and the head-up display */
+  function conceptCockpit(v, car){
+    var K = CONCEPT, C = cabinMats(), cab = new THREE.Group();
+    car.add(cab);
+    car.userData.cabin = cab;
+    car.userData.cab = { visible:true }; car.userData.roofPanel = { visible:true }; car.userData.pillar = { visible:true };
+    var eye = fromModel(K.eye[0], K.eye[1], K.eye[2]);
+    car.userData.eye = eye;
+    /* the instruments, on the pod behind the wheel */
+    var cc = document.createElement('canvas'); cc.width = 512; cc.height = 160;
+    var ctex = new THREE.CanvasTexture(cc); ctex.encoding = THREE.sRGBEncoding;
+    var cluster = new THREE.Mesh(new THREE.PlaneGeometry(0.27, 0.084), new THREE.MeshBasicMaterial({ map:ctex, toneMapped:false }));
+    cluster.position.copy(fromModel(K.left, 0.775, 1.235));
+    cluster.rotation.y = -Math.PI/2; cluster.rotateX(-0.28);
+    cab.add(cluster);
+    car.userData.cluster = { canvas:cc, ctx:cc.getContext('2d'), tex:ctex, last:'' };
+    /* the head-up display */
+    var hc = document.createElement('canvas'); hc.width = 256; hc.height = 96;
+    var htex = new THREE.CanvasTexture(hc); htex.encoding = THREE.sRGBEncoding;
+    var hud = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.1125),
+      new THREE.MeshBasicMaterial({ map:htex, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending,
+                                    depthWrite:false, depthTest:false, toneMapped:false, fog:false }));
+    hud.position.set(eye.x + 2.4, eye.y - 0.2, eye.z); hud.rotation.y = -Math.PI/2; hud.renderOrder = 5;
+    cab.add(hud);
+    car.userData.hud = { canvas:hc, ctx:hc.getContext('2d'), tex:htex, last:'' };
+    /* your hands on its wheel, forearms, cuffs and the watch */
+    var U3 = car.userData.concept, grip = new THREE.Group(), hands = [], R = K.rim*K.S;
+    [[Math.PI*0.8, -1], [Math.PI*0.2, 1]].forEach(function(hd){
+      var hand = buildModelHand(C, hd[1] < 0 ? 'left' : 'right', hd[1]) || buildHand(C, hd[1]);
+      hand.position.set(Math.cos(hd[0])*R, Math.sin(hd[0])*R, 0);
+      hand.rotation.z = hd[0];
+      hand.updateMatrix();
+      grip.add(hand); hands.push(hand);
+    });
+    U3.column.add(grip);
+    car.userData.steeringWheel = U3.wheel;
+    var arms = [1, -1].map(function(side, i){
+      var fore = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.046, 1, 18), C.sleeve);
+      var cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.034, 0.026, 18), C.cuff);
+      cab.add(fore); cab.add(cuff);
+      var watch = null;
+      if (side < 0){
+        watch = new THREE.Group();
+        watch.add(new THREE.Mesh(new THREE.CylinderGeometry(0.0305, 0.0305, 0.018, 18), C.leather));
+        var caseM = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.009, 20).rotateZ(Math.PI/2), C.watch);
+        caseM.position.x = 0.033; watch.add(caseM);
+        var dial = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.0095, 20).rotateZ(Math.PI/2), C.dial);
+        dial.position.x = 0.0335; watch.add(dial);
+        cab.add(watch);
+      }
+      return { hand:hands[i], fore:fore, cuff:cuff, watch:watch, elbow:new THREE.Vector3(eye.x + 0.2, eye.y - 0.46, eye.z + side*0.23) };
+    });
+    car.userData.arms = { column:U3.column, grip:grip, wheel:U3.wheel, list:arms, hide:[grip] };
+    setCabin(car, camMode === 'inside');
+  }
+
+  /* ---------------- the driver's hands: real models ---------------- */
+  /* The WebXR "generic hand" models (MIT): a proper hand mesh on a
+     25-joint rig. The rig's joints float free (a headset would place each
+     one), so the grip is posed here: every finger's chain is bent joint
+     by joint, each joint carrying the ones beyond it, then the whole hand
+     is turned and set so the rim lies in the crook of the fingers. Until
+     the models have loaded the simple built hand stands in. */
+  var handKit = { left:null, right:null, version:0 };
+  function loadHands(){
+    if (typeof THREE.GLTFLoader === 'undefined' || typeof ASSETS === 'undefined') return;
+    ['left', 'right'].forEach(function(side){
+      var src = ASSETS['model_hand_' + side];
+      if (!src) return;
+      fetch(src).then(function(r){ return r.arrayBuffer(); }).then(function(buf){
+        new THREE.GLTFLoader().parse(buf, '', function(gltf){
+          handKit[side] = gltf.scene;
+          if (handKit.left && handKit.right) handKit.version++;
+        });
+      }).catch(function(){});
+    });
+  }
+  var GRIP = { curl:[1.15, 1.45, 0.9], thumb:[0.1, 0.35, 0.45], palm:0.031, along:0.004, tilt:0.0 };
+  function buildModelHand(C, side, up){
+    var src = handKit[side];
+    if (!src) return null;
+    var V = THREE.Vector3, Q = THREE.Quaternion;
+    var inst = THREE.SkeletonUtils.clone(src), J = {};
+    inst.traverse(function(o){
+      J[o.name] = o;
+      if (o.isMesh){ o.material = C.skin; o.frustumCulled = false; o.castShadow = false; }
+    });
+    inst.updateMatrixWorld(true);
+    /* the hand's own directions, from its rest pose: along it, out of the palm */
+    var wristP = J['wrist'].position.clone();
+    var knuckles = ['index-finger', 'middle-finger', 'ring-finger', 'pinky-finger'].map(function(f){ return J[f + '-phalanx-proximal'].position.clone(); });
+    var mid = knuckles.reduce(function(a, b){ return a.add(b); }, new V()).multiplyScalar(0.25);
+    var Fm = mid.clone().sub(wristP).normalize();
+    var Pm = new V(0, -1, 0).applyQuaternion(J['wrist'].quaternion).normalize();       // joints' +y is the back of the hand
+    Pm.addScaledVector(Fm, -Pm.dot(Fm)).normalize();
+    var Sm = new V().crossVectors(Fm, Pm);
+    /* bend a chain: each joint turns about its own x, and carries the rest */
+    function bend(names, angles){
+      var D = new Q(), prevOld = null, prevNew = null, x = new V(1, 0, 0);
+      names.forEach(function(n, i){
+        var j = J[n]; if (!j) return;
+        var oldP = j.position.clone(), qOld = j.quaternion.clone();
+        if (prevOld) j.position.copy(prevNew).add(oldP.clone().sub(prevOld).applyQuaternion(D));
+        prevOld = oldP; prevNew = j.position.clone();
+        var local = qOld.clone().multiply(new Q().setFromAxisAngle(x, -(angles[i] || 0))).multiply(qOld.clone().invert());
+        D.multiply(local);
+        j.quaternion.copy(D).multiply(qOld);
+      });
+    }
+    ['index-finger', 'middle-finger', 'ring-finger', 'pinky-finger'].forEach(function(f, k){
+      var c = GRIP.curl, more = 1 + k*0.03;
+      bend([f + '-metacarpal', f + '-phalanx-proximal', f + '-phalanx-intermediate', f + '-phalanx-distal', f + '-tip'],
+           [0, c[0]*more, c[1]*more, c[2], 0]);
+    });
+    bend(['thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip'], [GRIP.thumb[0], GRIP.thumb[1], GRIP.thumb[2], 0]);
+    /* where the hand goes on the rim: the palm on its outer, near face,
+       the fingers going over the top and round behind */
+    var F = new V(0.7, 0, 0.7).normalize(), P = new V(-0.7, 0, 0.7).normalize(), S = new V().crossVectors(F, P);
+    var Mm = new THREE.Matrix4().makeBasis(Fm, Pm, Sm), Mt = new THREE.Matrix4().makeBasis(F, P, S);
+    var R = new Q().setFromRotationMatrix(Mt.multiply(Mm.invert()));
+    /* the middle of the rim's tube lies just inside the knuckles, on the palm side */
+    var anchor = mid.clone().addScaledVector(Pm, GRIP.palm).addScaledVector(Fm, GRIP.along);
+    var hand = new THREE.Group(), holder = new THREE.Group();
+    holder.quaternion.copy(R);
+    holder.position.copy(anchor).applyQuaternion(R).multiplyScalar(-1);
+    holder.add(inst); hand.add(holder);
+    var wrist = new THREE.Object3D();
+    wrist.position.copy(wristP).addScaledVector(Fm, 0.016).applyQuaternion(R).add(holder.position);   // a little way into the hand, so the cuff covers the join
+    hand.add(wrist);
+    hand.userData.wrist = wrist;
+    void up;
+    return hand;
+  }
   function buildCockpit(v, car){
     var L = v.len*U, W = v.wid*U, VMs = vehicleMats(), C = cabinMats();
     var ex = -0.028*L, dz = -0.20*W;                 // the driver's eyes, as in frame()
-    car.userData.cab.visible = false;
-    car.userData.roofPanel.visible = false;
-    car.userData.pillar.visible = false;
-    var firstPart = car.children.length;
+    /* everything inside goes in one group, hidden when you look from outside */
+    var cab = new THREE.Group();
+    car.add(cab);
+    car.userData.cabin = cab;
+    function put(geo, mat, x, y, z){ var m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); cab.add(m); return m; }
+    function box(w, h, d, mat, x, y, z){ return put(new THREE.BoxGeometry(w, h, d), mat, x, y, z); }
     /* seats, floor and the rest of the inside, dark, covering the body top */
-    part(new THREE.BoxGeometry(L*0.44, 0.40, W - 0.10), VMs.dash, -L*0.18, 0.87, 0, car);
-    /* the footwells and centre console, under the wheel */
-    part(new THREE.BoxGeometry(0.70, 0.40, W - 0.14), C.door, ex + 0.28, 0.768, 0, car);
+    box(L*0.44, 0.40, W - 0.10, VMs.dash, -L*0.18, 0.87, 0);
+    box(0.70, 0.40, W - 0.14, C.door, ex + 0.28, 0.768, 0);          // footwells and centre console
 
-    /* the dashboard: windscreen base, a long soft top, a rounded lip,
-       then the face dropping away towards your knees */
-    var dash = [[1.17,0.90],[1.05,0.955],[0.80,0.975],[0.68,0.97],[0.645,0.945],[0.63,0.88],[0.60,0.72],[0.57,0.55],[1.17,0.55]];
-    part(crossExtrude(dash, ex, -W/2 + 0.12, W/2 - 0.12), C.dash, 0, 0, 0, car);
-    /* a trim strip across the face, and air vents */
-    part(new THREE.BoxGeometry(0.012, 0.018, W - 0.34), C.trim, ex + 0.638, 0.915, 0, car);
-    [-0.11, 0.11, -(W/2 - 0.24), W/2 - 0.24].forEach(function(z){
-      part(new THREE.BoxGeometry(0.03, 0.065, 0.15), C.vent, ex + 0.622, 0.85, z, car);
-      for (var k = -1; k <= 1; k++) part(new THREE.BoxGeometry(0.034, 0.006, 0.14), C.trim, ex + 0.622, 0.85 + k*0.02, z, car);
+    /* the dashboard: a long low top in leather, a rounded lip, the face below */
+    var dash = [[1.17,0.90],[1.05,0.945],[0.80,0.957],[0.69,0.952],[0.662,0.932],[0.648,0.885],[0.62,0.74],[0.59,0.55],[1.17,0.55]];
+    put(crossExtrude(dash, ex, -W/2 + 0.12, W/2 - 0.12), C.dash, 0, 0, 0);
+    /* a seam of contrast stitching along the lip */
+    box(0.004, 0.004, W - 0.3, C.stitch, ex + 0.672, 0.948, 0);
+    /* across the face: the light line, the wood band with its vent slit, a satin edge */
+    var lights = [];
+    lights.push(box(0.01, 0.012, W - 0.3, C.ambient, ex + 0.652, 0.905, 0));
+    box(0.012, 0.062, W - 0.32, C.wood, ex + 0.643, 0.864, 0);
+    box(0.016, 0.014, W - 0.5, C.vent, ex + 0.642, 0.872, 0);
+    box(0.012, 0.006, W - 0.32, C.trim, ex + 0.636, 0.829, 0);
+    [-(W/2 - 0.2), W/2 - 0.2].forEach(function(z){                     // round outer vents
+      var ring = put(new THREE.TorusGeometry(0.036, 0.007, 8, 20).rotateY(Math.PI/2), C.trim, ex + 0.642, 0.866, z);
+      void ring;
+      put(new THREE.CylinderGeometry(0.033, 0.033, 0.01, 18).rotateZ(Math.PI/2), C.vent, ex + 0.644, 0.866, z);
     });
 
-    /* the instrument pod: the cluster under a short hood */
-    /* a slim curved hood, open towards you */
-    var hood = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.34, 20, 1, true, Math.PI*0.45, Math.PI*0.7)
-      .rotateX(Math.PI/2), C.dashTop);
-    hood.material = C.dashTop.clone(); hood.material.side = THREE.DoubleSide;
-    hood.position.set(ex + 0.82, 0.985, dz);
-    hood.rotation.y = 0;
-    car.add(hood);
+    /* the curved display: one sheet of black glass, instruments ahead, map to the right */
     var cc = document.createElement('canvas'); cc.width = 512; cc.height = 160;
     var ctex = new THREE.CanvasTexture(cc); ctex.encoding = THREE.sRGBEncoding;
-    var cluster = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.094),
-      new THREE.MeshBasicMaterial({ map:ctex, toneMapped:false }));
-    cluster.position.set(ex + 0.81, 1.025, dz);
-    cluster.rotation.set(0, -Math.PI/2, 0); cluster.rotateX(-0.25);
-    car.add(cluster);
+    var DW = 0.34, DH = 0.106, NW = 0.40, bend = 0.40, dx = ex + 0.80, dy = 1.012;
+    var glassA = new THREE.Group(); glassA.position.set(dx, dy, dz); glassA.rotation.y = -Math.PI/2; glassA.rotateX(-0.2);
+    glassA.add(new THREE.Mesh(new THREE.BoxGeometry(DW + 0.02, DH + 0.022, 0.012), C.piano));
+    var cluster = new THREE.Mesh(new THREE.PlaneGeometry(DW, DH), new THREE.MeshBasicMaterial({ map:ctex, toneMapped:false }));
+    cluster.position.z = 0.0065; glassA.add(cluster);
+    cab.add(glassA);
     car.userData.cluster = { canvas:cc, ctx:cc.getContext('2d'), tex:ctex, last:'' };
-
-    /* the centre screen: the satnav, the same picture as the minimap */
+    var hingeZ = dz + DW/2 + 0.01;
+    var glassB = new THREE.Group();
+    glassB.position.set(dx - Math.sin(bend)*(NW/2 + 0.01), dy, hingeZ + Math.cos(bend)*(NW/2 + 0.01));
+    glassB.rotation.y = -Math.PI/2 - bend; glassB.rotateX(-0.2);
+    glassB.add(new THREE.Mesh(new THREE.BoxGeometry(NW + 0.02, DH + 0.022, 0.012), C.piano));
     var mapCanvas = typeof document !== 'undefined' && document.getElementById('minimap');
-    var scr = new THREE.Group();
-    scr.position.set(ex + 0.80, 1.035, 0.03);
-    scr.rotation.y = -Math.PI/2 - 0.42;                 // turned towards the driver
-    scr.rotateX(-0.12);
-    var bezel = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.15, 0.014), C.piano);
-    scr.add(bezel);
     if (mapCanvas){
       var mtex = new THREE.CanvasTexture(mapCanvas); mtex.encoding = THREE.sRGBEncoding;
-      var screen = new THREE.Mesh(new THREE.PlaneGeometry(0.228, 0.13),
-        new THREE.MeshBasicMaterial({ map:mtex, toneMapped:false }));
-      /* the square map, cropped to the screen's shape */
-      mtex.repeat.set(1, 0.13/0.228); mtex.offset.set(0, (1 - 0.13/0.228)*0.62);
-      screen.position.z = 0.0075;
-      scr.add(screen);
+      var screen = new THREE.Mesh(new THREE.PlaneGeometry(NW, DH), new THREE.MeshBasicMaterial({ map:mtex, toneMapped:false }));
+      mtex.repeat.set(1, DH/NW); mtex.offset.set(0, (1 - DH/NW)*0.72);     // the square map, cropped to the screen
+      screen.position.z = 0.0065; glassB.add(screen);
       car.userData.navTex = mtex;
     }
-    car.add(scr);
+    cab.add(glassB);
+    /* its foot on the dashboard */
+    box(0.05, 0.03, DW + NW*0.6, C.dashTop, dx + 0.02, 0.958, dz + 0.16);
 
-    /* door cards with a sill and armrest on both sides */
+    /* the head-up display: speed and limit, floating out over the bonnet */
+    var hc = document.createElement('canvas'); hc.width = 256; hc.height = 96;
+    var htex = new THREE.CanvasTexture(hc); htex.encoding = THREE.sRGBEncoding;
+    var hud = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.1125),
+      new THREE.MeshBasicMaterial({ map:htex, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending,
+                                    depthWrite:false, toneMapped:false, fog:false }));
+    hud.position.set(ex + 2.35, 0.935, dz); hud.rotation.y = -Math.PI/2; hud.renderOrder = 5;
+    cab.add(hud);
+    car.userData.hud = { canvas:hc, ctx:hc.getContext('2d'), tex:htex, last:'' };
+
+    /* door cards: leather above, the wood band and light line carried through, armrest, handle, speaker */
     [-1, 1].forEach(function(side){
       var z = side*(W/2 - 0.09);
-      part(new THREE.BoxGeometry(1.35, 0.42, 0.06), C.door, ex + 0.25, 0.76, z, car);
-      part(new THREE.BoxGeometry(1.35, 0.05, 0.12), C.dashTop, ex + 0.25, 0.975, side*(W/2 - 0.11), car);
-      part(new THREE.BoxGeometry(0.40, 0.05, 0.10), C.door, ex + 0.05, 0.80, side*(W/2 - 0.15), car);
-      part(new THREE.BoxGeometry(0.10, 0.03, 0.02), C.trim, ex + 0.38, 0.90, side*(W/2 - 0.125), car);   // door handle
+      box(1.35, 0.42, 0.06, C.door, ex + 0.25, 0.76, z);
+      box(1.35, 0.05, 0.12, C.dashTop, ex + 0.25, 0.975, side*(W/2 - 0.11));
+      box(1.1, 0.05, 0.012, C.wood, ex + 0.2, 0.868, side*(W/2 - 0.124));
+      lights.push(box(1.1, 0.01, 0.01, C.ambient, ex + 0.2, 0.905, side*(W/2 - 0.124)));
+      box(0.42, 0.05, 0.11, C.leather, ex + 0.05, 0.80, side*(W/2 - 0.155));
+      box(0.12, 0.022, 0.02, C.trim, ex + 0.40, 0.925, side*(W/2 - 0.128));
+      put(new THREE.CylinderGeometry(0.07, 0.07, 0.008, 22).rotateX(Math.PI/2), C.trim, ex + 0.5, 0.70, side*(W/2 - 0.122));
     });
-    /* A-pillars along the windscreen edges, roof lining and sun visors above */
+    /* A-pillars along the windscreen edges, dark roof lining and sun visors above */
     [-1, 1].forEach(function(side){
       var a = new THREE.Vector3(L*0.22, 0.92, side*(W*0.42)), b = new THREE.Vector3(L*0.05, 1.40, side*(W*0.38));
       var len = a.distanceTo(b);
       var pil = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, len, 10).scale(1, 1, 1.5), C.pillar);
       pil.position.copy(a).add(b).multiplyScalar(0.5);
       pil.lookAt(b); pil.rotateX(Math.PI/2);
-      car.add(pil);
-      part(new THREE.BoxGeometry(0.2, 0.022, 0.36), C.fabric, L*0.02, 1.37, side*0.36, car);
+      cab.add(pil);
+      box(0.2, 0.022, 0.36, C.fabric, L*0.02, 1.37, side*0.36);
     });
-    part(new THREE.BoxGeometry(1.4, 0.04, W*0.84), C.fabric, -L*0.11, 1.41, 0, car);
+    box(1.4, 0.04, W*0.84, C.fabric, -L*0.11, 1.41, 0);
 
-    /* the steering wheel: a thick leather rim, three spokes with a
-       metal trim, the airbag boss - and your hands, at a quarter to three */
+    /* the wheel on its column, with the stalks either side */
     var column = new THREE.Group();
     column.position.set(L*0.085, 0.87, dz);
     column.rotation.y = Math.PI/2; column.rotateX(0.45);
-    var shroud = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.32, 14).rotateX(Math.PI/2).translate(0, 0, 0.18), C.dashTop);
-    column.add(shroud);
-    var wheel = new THREE.Group();
-    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(0.185, 0.026, 14, 48), C.leather));
-    [[0, 0.115, 0.04], [Math.PI, 0.115, 0.04], [-Math.PI/2, 0.12, 0.05]].forEach(function(sp){
-      var spoke = new THREE.Mesh(new THREE.BoxGeometry(sp[1], sp[2], 0.022), C.leather);
-      spoke.position.set(Math.cos(sp[0])*(0.075 + sp[1]/2 - 0.02), Math.sin(sp[0])*(0.075 + sp[1]/2 - 0.02), 0.005);
-      spoke.rotation.z = sp[0];
-      wheel.add(spoke);
-      var tr = new THREE.Mesh(new THREE.BoxGeometry(sp[1]*0.8, 0.006, 0.004), C.trim);
-      tr.position.copy(spoke.position); tr.position.z = -0.008; tr.rotation.z = sp[0];
-      wheel.add(tr);
+    column.add(new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.062, 0.32, 16).rotateX(Math.PI/2).translate(0, 0, 0.18), C.dashTop));
+    [-1, 1].forEach(function(side){
+      var stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.014, 0.17, 10).rotateZ(Math.PI/2), C.piano);
+      stalk.position.set(side*0.125, 0.012, 0.085); stalk.rotation.z = side*0.12; column.add(stalk);
+      var tip = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.03, 10).rotateZ(Math.PI/2), C.trim);
+      tip.position.set(side*0.205, 0.022*side*side, 0.085); column.add(tip);
     });
-    wheel.add(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.08, 0.05, 24).rotateX(Math.PI/2), C.leather));
-    var boss = new THREE.Mesh(new THREE.CylinderGeometry(0.066, 0.066, 0.02, 24).rotateX(Math.PI/2), C.dash);
-    boss.position.z = -0.03; wheel.add(boss);
+    var wheel = new THREE.Group();
+    function wadd(geo, mat, x, y, z, rz){ var m = new THREE.Mesh(geo, mat); m.position.set(x, y, z || 0); if (rz) m.rotation.z = rz; wheel.add(m); return m; }
+    wadd(new THREE.TorusGeometry(0.185, 0.027, 16, 56), C.leather, 0, 0, 0);
+    wadd(new THREE.TorusGeometry(0.185, 0.0276, 5, 56, Math.PI*2), C.stitch, 0, 0, 0).scale.set(1, 1, 0.12);      // the seam round the rim
+    /* thumb rests where the side spokes meet the rim */
+    [0, Math.PI].forEach(function(a){
+      wadd(new THREE.SphereGeometry(0.034, 12, 10).scale(1.2, 1.0, 0.7), C.leather, Math.cos(a)*0.163, 0.004, -0.004);
+      /* a broad spoke with a gloss button pad let into it */
+      wadd(new THREE.BoxGeometry(0.105, 0.05, 0.026), C.leather, Math.cos(a)*0.108, 0, 0.006);
+      wadd(new THREE.BoxGeometry(0.07, 0.036, 0.006), C.piano, Math.cos(a)*0.104, 0, -0.009);
+      for (var k = 0; k < 3; k++) wadd(new THREE.CylinderGeometry(0.0055, 0.0055, 0.004, 10).rotateX(Math.PI/2), C.trim, Math.cos(a)*(0.082 + k*0.022), 0, -0.012);
+      /* shift paddles behind */
+      wadd(new THREE.BoxGeometry(0.06, 0.085, 0.006), C.trim, Math.cos(a)*0.135, 0.015, 0.04);
+    });
+    /* the lower spoke: two satin bars */
+    [-0.016, 0.016].forEach(function(x){ wadd(new THREE.BoxGeometry(0.011, 0.115, 0.012), C.trim, x, -0.112, 0.004); });
+    /* the boss: a soft pad, a satin ring and a plain roundel */
+    wadd(new THREE.CylinderGeometry(0.072, 0.078, 0.05, 28).rotateX(Math.PI/2), C.leather, 0, 0, 0.008);
+    wadd(new THREE.CylinderGeometry(0.064, 0.064, 0.012, 28).rotateX(Math.PI/2), C.dash, 0, 0, -0.02);
+    wadd(new THREE.TorusGeometry(0.024, 0.003, 10, 32), C.trim, 0, 0, -0.027);
+    /* the badge: the game's own roundel - RW, for Right of Way */
+    var badge = wadd(new THREE.CircleGeometry(0.0225, 32), badgeMat(), 0, 0, -0.0285);
+    badge.rotation.y = Math.PI;
     column.add(wheel);
-    /* the hands hold on (ten to two) as the wheel turns, up to about a quarter turn */
+    /* your hands, at ten to two; they hold on as the wheel turns, up to about a quarter turn */
     var grip = new THREE.Group(), hands = [];
-    [Math.PI*0.8, Math.PI*0.2].forEach(function(a){
-      /* the hand's x points out from the hub, y along the rim */
-      var hand = new THREE.Group();
-      hand.position.set(Math.cos(a)*0.185, Math.sin(a)*0.185, 0);
-      hand.rotation.z = a;
-      /* the back of the hand towards you, fingers curled round the rim */
-      var back = new THREE.Mesh(new THREE.SphereGeometry(0.036, 16, 12).scale(0.75, 1.2, 0.55), C.skin);
-      back.position.set(0.004, 0, -0.03);
-      hand.add(back);
-      var fingers = new THREE.Mesh(new THREE.TorusGeometry(0.031, 0.014, 8, 16, Math.PI*1.35).rotateX(Math.PI/2).rotateY(2.04), C.skin);
-      fingers.scale.set(1, 2.2, 1);
-      hand.add(fingers);
-      var thumb = new THREE.Mesh(new THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(0.011, 0.04, 4, 8) : new THREE.CylinderGeometry(0.011, 0.011, 0.05, 8), C.skin);
-      thumb.position.set(-0.02, a > Math.PI/2 ? -0.03 : 0.03, -0.026);
-      thumb.rotation.z = a > Math.PI/2 ? 0.5 : -0.5;
-      hand.add(thumb);
-      grip.add(hand);
-      hands.push(hand);
+    [[Math.PI*0.8, -1], [Math.PI*0.2, 1]].forEach(function(hd){
+      var hand = buildModelHand(C, hd[1] < 0 ? 'left' : 'right', hd[1]) || buildHand(C, hd[1]);
+      hand.position.set(Math.cos(hd[0])*0.185, Math.sin(hd[0])*0.185, 0);
+      hand.rotation.z = hd[0];
+      hand.updateMatrix();
+      grip.add(hand); hands.push(hand);
     });
     column.add(grip);
-    car.add(column);
+    cab.add(column);
     car.userData.steeringWheel = wheel;
-    /* forearms in jacket sleeves, from the elbows to the hands */
-    var arms = [-1, 1].map(function(side, i){
-      var fore = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.046, 1, 14), C.sleeve);
-      car.add(fore);
-      return { hand:hands[i], fore:fore, elbow:new THREE.Vector3(ex + 0.14, 0.84, dz + side*0.27) };
+    /* forearms in a jacket, a shirt cuff showing at each wrist, a watch on the left */
+    /* the wheel faces you, so the hand at its ten o'clock is on your right as the car sees it */
+    var arms = [1, -1].map(function(side, i){
+      var fore = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.046, 1, 18), C.sleeve);
+      var cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.034, 0.026, 18), C.cuff);
+      cab.add(fore); cab.add(cuff);
+      var watch = null;
+      if (side < 0){
+        watch = new THREE.Group();
+        watch.add(new THREE.Mesh(new THREE.CylinderGeometry(0.0305, 0.0305, 0.018, 18), C.leather));        // the strap
+        var caseM = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.009, 20).rotateZ(Math.PI/2), C.watch);
+        caseM.position.x = 0.033; watch.add(caseM);
+        var dial = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.0095, 20).rotateZ(Math.PI/2), C.dial);
+        dial.position.x = 0.0335; watch.add(dial);
+        cab.add(watch);
+      }
+      return { hand:hands[i], fore:fore, cuff:cuff, watch:watch, elbow:new THREE.Vector3(ex + 0.17, 0.70, dz + side*0.235) };
     });
     car.userData.arms = { column:column, grip:grip, wheel:wheel, list:arms };
-    /* everything fixed straight to the car (dashboard, vents, door cards,
-       lining...) becomes one mesh per material; the cluster, the wheel and
-       the arms stay live */
-    var live = [cluster].concat(arms.map(function(a){ return a.fore; }));
-    var fixed = car.children.slice(firstPart).filter(function(ch){ return ch.isMesh && live.indexOf(ch) < 0; });
-    fixed.forEach(function(ch){ car.remove(ch); });
-    mergeByMaterial(fixed).forEach(function(m){ m.castShadow = false; car.add(m); });
+    car.userData.ambient = C.ambient;
+    /* everything fixed (dashboard, trim, door cards, lining...) becomes one
+       mesh per material; the screens, the wheel and the arms stay live */
+    var live = [hud];
+    arms.forEach(function(a){ live.push(a.fore, a.cuff); });
+    var fixed = cab.children.filter(function(ch){ return ch.isMesh && live.indexOf(ch) < 0; });
+    fixed.forEach(function(ch){ cab.remove(ch); });
+    mergeByMaterial(fixed).forEach(function(m){ m.castShadow = false; cab.add(m); });
+    setCabin(car, camMode === 'inside');
   }
-  /* each frame: the hands turn with the wheel (to a point), the forearms follow */
+  /* inside: the cabin, and no roof in the way; outside: the whole car */
+  function setCabin(car, inside){
+    if (!car || !car.userData.cabin) return;
+    car.userData.cabin.visible = inside;
+    if (car.userData.concept){
+      /* the whole car is always there; only your hands and displays come and go */
+      if (car.userData.arms) car.userData.arms.grip.visible = inside;
+      return;
+    }
+    car.userData.cab.visible = !inside;
+    car.userData.roofPanel.visible = !inside;
+  }
+  /* each frame: the hands turn with the wheel (to a point), forearms, cuffs and watch follow */
   var armTmp = null;
   function updateArms(A){
     if (!armTmp) armTmp = { v:new THREE.Vector3(), d:new THREE.Vector3(), up:new THREE.Vector3(0, 1, 0) };
     A.grip.rotation.z = Math.max(-1.1, Math.min(1.1, A.wheel.rotation.z));
     A.column.updateMatrix(); A.grip.updateMatrix();
     A.list.forEach(function(a){
-      var hp = armTmp.v.copy(a.hand.position).applyMatrix4(A.grip.matrix).applyMatrix4(A.column.matrix);
-      var d = armTmp.d.copy(hp).sub(a.elbow), len = d.length();
-      a.fore.position.copy(a.elbow).addScaledVector(d, 0.5);
-      a.fore.quaternion.setFromUnitVectors(armTmp.up, d.normalize());
-      a.fore.scale.set(1, len*0.92, 1);
+      var wp = armTmp.v.copy(a.hand.userData.wrist.position).applyMatrix4(a.hand.matrix).applyMatrix4(A.grip.matrix).applyMatrix4(A.column.matrix);
+      var d = armTmp.d.copy(wp).sub(a.elbow), len = d.length();
+      d.normalize();
+      a.fore.position.copy(a.elbow).addScaledVector(d, len*0.5 - 0.012);
+      a.fore.quaternion.setFromUnitVectors(armTmp.up, d);
+      a.fore.scale.set(1, len - 0.024, 1);
+      a.cuff.position.copy(wp).addScaledVector(d, -0.012);
+      a.cuff.quaternion.copy(a.fore.quaternion);
+      if (a.watch){
+        a.watch.position.copy(wp).addScaledVector(d, 0.012);
+        a.watch.quaternion.copy(a.fore.quaternion);
+        a.watch.rotateY(2.2);                              // the dial on the back of the wrist, towards you
+      }
     });
   }
-
+  /* the head-up display: your speed, and the limit beside it */
+  function drawHud(h, kmh, limit){
+    var key = Math.round(kmh) + '|' + limit;
+    if (key === h.last) return;
+    h.last = key;
+    var g = h.ctx, w = h.canvas.width, ht = h.canvas.height, over = kmh > limit + 2;
+    g.clearRect(0, 0, w, ht);
+    g.fillStyle = over ? '#ff5a4a' : '#bfe6ff'; g.textAlign = 'right'; g.textBaseline = 'middle';
+    g.font = 'bold 64px Arial'; g.fillText(String(Math.round(kmh)), 128, 50);
+    g.font = '18px Arial'; g.textAlign = 'left'; g.fillStyle = 'rgba(191,230,255,0.75)'; g.fillText('km/h', 134, 66);
+    g.strokeStyle = '#ff4a3a'; g.lineWidth = 6; g.beginPath(); g.arc(214, 46, 26, 0, Math.PI*2); g.stroke();
+    g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.font = 'bold 26px Arial'; g.fillText(String(limit), 214, 48);
+    h.tex.needsUpdate = true;
+  }
   /* the cluster: a round speedometer (0-200), the speed in figures, the
      green arrows when an indicator is on, lit softly at night */
   function drawCluster(cl, kmh, indicator, blink){
@@ -2673,13 +3086,13 @@ var GL3D = (function(){
 
   var navTick = 0;
   function vehicleMesh(v){
-    var key = v.id + '|' + v.kind + '|' + (v.taxi ? 't' : v.color);
+    var key = v.id + '|' + v.kind + '|' + (v.taxi ? 't' : v.color) + (v.isPlayer ? '|h' + handKit.version + 'c' + CONCEPT.version : '');
     var cur = dyn.meshes[v.id];
     if (cur && cur.userData.key === key) return cur;
     if (cur){ scene.remove(cur); }
     var g = v.kind === 'tram' ? bakeVehicle(buildTram(v)) : v.kind === 'bus' ? bakeVehicle(buildBus(v))
-          : v.kind === 'bike' ? buildBike(v) : buildCar(v);
-    if (v.isPlayer) buildCockpit(v, g);
+          : v.kind === 'bike' ? buildBike(v) : (v.isPlayer && CONCEPT.kit) ? buildConceptCar(v) : buildCar(v);
+    if (v.isPlayer){ if (g.userData.concept) conceptCockpit(v, g); else buildCockpit(v, g); }
     g.userData.key = key;
     scene.add(g);
     dyn.meshes[v.id] = g;
@@ -2700,10 +3113,15 @@ var GL3D = (function(){
         /* the front pair turns with the steering (a car's first two wheels) */
         if (k < 2 && v.kind !== 'bike') w.rotation.y = -(v.delta || 0);
       });
+      if (g.userData.concept) g.userData.concept.hubs.forEach(function(hub, k){
+        hub.rotation.x = (v.s*U)/(0.36*CONCEPT.S);
+        if (k < 2) hub.rotation.y = -(v.delta || 0);
+      });
       if (g.userData.steeringWheel) g.userData.steeringWheel.rotation.z = -(v.delta || 0) * 14;
       if (g.userData.arms) updateArms(g.userData.arms);
       if (g.userData.navTex && (navTick++ & 1)) g.userData.navTex.needsUpdate = true;
       if (g.userData.cluster) drawCluster(g.userData.cluster, v.v*3.6/CFG.PPM, v.indicator, (t*2.2) % 1 < 0.55);
+      if (g.userData.hud) drawHud(g.userData.hud, v.v*3.6/CFG.PPM, (world.sc && world.sc.limit) || 50);
       /* a cyclist pedals while moving */
       if (g.userData.rider){
         var ph = v.s*U*1.6;
@@ -2765,7 +3183,7 @@ var GL3D = (function(){
   var SHIRTS = ['#2f3b52','#7a1f2b','#3d4a3a','#c9c4b8','#1f1f24','#8b7355','#2c5a7a','#6b2f5b','#c4572e','#4a6a8a','#e0ddd4','#5a5a5a'];
   function loadPeople(){
     if (typeof THREE.GLTFLoader === 'undefined' || typeof ASSETS === 'undefined') return;
-    var keys = Object.keys(ASSETS).filter(function(k){ return /^model_/.test(k); });
+    var keys = Object.keys(ASSETS).filter(function(k){ return /^model_/.test(k) && !/^model_hand/.test(k); });
     var loader = new THREE.GLTFLoader(), left = keys.length;
     keys.forEach(function(k){
       fetch(ASSETS[k]).then(function(r){ return r.arrayBuffer(); }).then(function(buf){
@@ -3061,6 +3479,7 @@ var GL3D = (function(){
       });
     }
     M.shop.emissiveIntensity = night ? 0.9 : 0;
+    if (CABIN) CABIN.ambient.emissiveIntensity = night ? 1.7 : 0.35;
     Object.keys(shopSignMats).forEach(function(k){ shopSignMats[k].emissiveIntensity = night ? 0.55 : 0; });
     if (apoMat) apoMat.emissiveIntensity = night ? 0.9 : 0;
     M.lampHead.emissiveIntensity = night ? 3.0 : 0;
@@ -3494,6 +3913,17 @@ var GL3D = (function(){
     return ride;
   }
   var rideQ = null;
+  /* Where you watch from: your own seat, just behind the car, or further
+     back and higher. From outside the camera swings round after the car
+     rather than snapping with it, and looking left or right (the same
+     keys as a shoulder check) swings it round the car. */
+  var camMode = 'inside', chase = { h:null, last:0 }, eyeV = null;
+  var CHASE = { behind:{ back:6.4, up:2.7, ahead:5, fov:52 }, far:{ back:13.5, up:6.6, ahead:7, fov:48 } };
+  function setCamera(mode){
+    camMode = mode === 'behind' || mode === 'far' ? mode : 'inside';
+    chase.h = null;
+    if (dyn) Object.keys(dyn.meshes).forEach(function(id){ setCabin(dyn.meshes[id], camMode === 'inside'); });
+  }
 
   /* ---------------- main entry ---------------- */
   function frame(world, yaw, w, h, opts){
@@ -3505,10 +3935,12 @@ var GL3D = (function(){
     }
     var p = world.player, c = Math.cos(p.pos.h), s = Math.sin(p.pos.h);
     /* the driver: just behind the car's middle, on the left */
-    var back = -0.028*p.len;
-    var ex = p.pos.x + c*back + s*(p.wid*0.20);
-    var ey = p.pos.y + s*back - c*(p.wid*0.20);
-    camera.position.set(ex*U, EYE_H, ey*U);
+    var back = -0.028*p.len, left = p.wid*0.20, eyeH = EYE_H;
+    var seat = dyn && dyn.meshes[p.id] && dyn.meshes[p.id].userData.eye;
+    if (seat){ back = seat.x/U; left = -seat.z/U; eyeH = seat.y; }       // this car's own seat
+    var ex = p.pos.x + c*back + s*left;
+    var ey = p.pos.y + s*back - c*left;
+    camera.position.set(ex*U, eyeH, ey*U);
     /* eyes a little down the road, as a driver sits: enough to see the
        instruments through the wheel on a wide screen */
     camera.rotation.set(-0.085, -(p.pos.h + (yaw || 0)) - Math.PI/2, 0);
@@ -3521,11 +3953,25 @@ var GL3D = (function(){
     rideQ.body.premultiply(rideQ.car).multiply(rideQ.car.invert());          // body tilt, in world space
     camera.quaternion.premultiply(rideQ.body);
     camera.position.y += bump*0.006;
+    /* the car itself always tilts about the driver's eyes, wherever we watch from */
+    if (!eyeV) eyeV = new THREE.Vector3();
+    eyeV.copy(camera.position);
     var aspect = w / Math.max(1, h);
     var vfov = 2*Math.atan(Math.tan(FOV_H*Math.PI/360) / aspect) * 180/Math.PI;
     /* about what you see from a real driver's seat; on a tall screen the
        view narrows sideways rather than growing a fish-eye roof and floor */
     camera.fov = Math.min(60, Math.max(38, vfov));
+    if (camMode !== 'inside'){
+      var K = CHASE[camMode], nowC = performance.now(), dtC = Math.min(0.1, (nowC - chase.last)/1000);
+      chase.last = nowC;
+      if (chase.h === null) chase.h = p.pos.h;
+      chase.h += Math.atan2(Math.sin(p.pos.h - chase.h), Math.cos(p.pos.h - chase.h)) * Math.min(1, dtC*4.5);
+      var hh = chase.h + (yaw || 0)*1.5, cxw = p.pos.x*U, czw = p.pos.y*U;
+      camera.position.set(cxw - Math.cos(hh)*K.back, K.up, czw - Math.sin(hh)*K.back);
+      camera.rotation.set(0, 0, 0);
+      camera.lookAt(cxw + c*K.ahead*Math.cos((yaw || 0)*1.5), 1.0, czw + s*K.ahead*Math.cos((yaw || 0)*1.5));
+      camera.fov = Math.min(K.fov + 8, Math.max(K.fov - 10, vfov));
+    }
     camera.aspect = aspect;
     camera.updateProjectionMatrix();
 
@@ -3534,7 +3980,7 @@ var GL3D = (function(){
     var own = dyn.meshes[p.id];
     if (own){
       own.rotation.set(0, -p.pos.h, 0);
-      own.position.sub(camera.position).applyQuaternion(rideQ.body).add(camera.position);
+      own.position.sub(eyeV).applyQuaternion(rideQ.body).add(eyeV);
       own.quaternion.premultiply(rideQ.body);
       own.position.y += bump*0.006;
     }
@@ -3566,7 +4012,7 @@ var GL3D = (function(){
     return true;
   }
 
-  return { available:available, frame:frame, syncTheme:syncTheme, setQuality:setQuality, setWeather:setWeather,
+  return { available:available, frame:frame, syncTheme:syncTheme, setQuality:setQuality, setWeather:setWeather, setCamera:setCamera,
            /* for poking at the scene from the browser console */
-           debug:function(){ return { scene:scene, camera:camera, renderer:renderer, dyn:dyn, post:post }; } };
+           debug:function(){ return { scene:scene, camera:camera, renderer:renderer, dyn:dyn, post:post, grip:GRIP, rehand:function(){ handKit.version++; } }; } };
 })();

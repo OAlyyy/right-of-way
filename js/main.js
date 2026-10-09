@@ -63,6 +63,8 @@
   var SOUND = 'fahrschule.sound.v1';
   var WEATHER = 'fahrschule.weather.v1';
   var WEATHERS = ['clear', 'evening', 'rain'];
+  var CAMERA = 'fahrschule.camera.v1';
+  var CAMERAS = ['inside', 'behind', 'far'];
 
   function el(id){ return document.getElementById(id); }
   function show(id, on){ el(id).classList.toggle('hidden', !on); }
@@ -119,6 +121,7 @@
     if (state.gfx) applyGfxLabel();
     if (state.sound !== undefined) applySoundLabel();
     if (state.weather) applyWeatherLabel();
+    if (state.camera) el('btn-camera').textContent = I18N.t('camera.' + state.camera);
     el('btn-theme').textContent = I18N.t(isDark() ? 'theme.day' : 'theme.night');
     el('menu-h1').innerHTML   = I18N.t('menu.h1');
     el('menu-lead').innerHTML = I18N.t('menu.lead');
@@ -906,6 +909,14 @@
   function applyWeatherLabel(){
     el('btn-weather').textContent = I18N.t('weather.' + state.weather);
   }
+  /* watch from the driver's seat, from behind the car, or from further back */
+  function setCamera(c){
+    state.camera = CAMERAS.indexOf(c) < 0 ? 'inside' : c;
+    save(CAMERA, state.camera);
+    if (typeof GL3D !== 'undefined') GL3D.setCamera(state.camera);
+    el('btn-camera').textContent = I18N.t('camera.' + state.camera);
+  }
+  function nextCamera(){ setCamera(CAMERAS[(CAMERAS.indexOf(state.camera) + 1) % CAMERAS.length]); }
   function setHints(on){
     state.hints = on;
     el('btn-hints').classList.toggle('off', !on);
@@ -958,6 +969,7 @@
     if (k === 'l'){ toggleSteer(); return; }
     if (k === 'g'){ setGfx(state.gfx === 'high' ? 'fast' : 'high'); return; }
     if (k === 'n'){ setSound(!state.sound); return; }
+    if (k === 'c'){ nextCamera(); return; }
     if (k === 't'){ setWeather(WEATHERS[(WEATHERS.indexOf(state.weather) + 1) % WEATHERS.length]); return; }
     if (k === 'm') look.mirror = true;
     if (k === 'q' && !e.repeat) setIndicator('left');
@@ -1092,6 +1104,8 @@
     setSound(load(SOUND, true) !== false);
     el('btn-sound').onclick = function(){ setSound(!state.sound); };
     setWeather(load(WEATHER, 'clear'));
+    setCamera(load(CAMERA, 'inside'));
+    el('btn-camera').onclick = nextCamera;
     el('btn-weather').onclick = function(){ setWeather(WEATHERS[(WEATHERS.indexOf(state.weather) + 1) % WEATHERS.length]); };
     /* browsers only allow sound after the first key or tap */
     ['keydown', 'pointerdown'].forEach(function(ev){

@@ -61,6 +61,7 @@ watches — speed, indicators, and above all who goes first.
 | `L` | steer yourself / let the car steer |
 | `G` | graphics: high (post-processing) / fast |
 | `N` | sound on / off |
+| `C` | camera: inside / behind the car / far behind |
 | `T` | weather: clear / evening sun / rain |
 | `X` | indicator off |
 | `V` | switch driver view ⇄ map view |
@@ -287,10 +288,21 @@ More that makes it feel real:
 - **Weather** (`T`): low evening sun with long shadows, or rain - grey
   light, mist, falling streaks, dark wet roads with puddles that mirror
   the sky. Works by night too.
-- **The cabin**: a shaped dashboard with a digital cluster under a curved
-  hood, a centre screen showing the satnav, vents, trim and door cards, a
-  leather wheel with your hands on it (they turn with it, to a point), and
-  a rear-view mirror in a real housing on its stem.
+- **The cabin**, in the manner of a current executive saloon: a low leather
+  dashboard with a wood band and a line of ambient light running into the
+  doors, one long curved display (instruments ahead, the satnav angled
+  towards you), a head-up display with speed and limit, a sport wheel with
+  button pads, paddles and stalks - and your hands on it, fingers round
+  the rim, shirt cuffs and a watch. They turn with the wheel, to a point.
+- **Your car** is an artist's model when the game is served over http: a
+  modern concept car with its own dashboard, wheel, seats and door cards,
+  in graphite (built as a centre-seat car; its driving position is moved
+  to the left here); its wheels turn and steer, its steering wheel
+  turns under rigged hands. Opened from disk or as the single file, the
+  built car and cabin above are used instead.
+- **Camera** (`C`): from the driver's seat, from just behind the car, or
+  from further back and higher; the look keys swing the outside camera
+  round the car.
 - **Overhead line** along the U-Bahn: masts with cantilevers, a contact
   wire zig-zagging between them, droppers and a sagging catenary.
 - **German traffic lights**: rounded housings on a black contrast board
@@ -321,6 +333,8 @@ Third-party files, all in the repo so the game runs offline:
 | `assets/tex/*.jpg` → `js/vendor/assets.js` | textures (asphalt, paving, gravel, plaster, roof tiles, grass, bark) from [Poly Haven](https://polyhaven.com), CC0 |
 | `assets/models/*.glb` → `js/vendor/assets.js` | people: "Animated Men Pack" and "Animated Women Pack" by [Quaternius](https://quaternius.com), CC0 (via poly.pizza) |
 | `js/vendor/GLTFLoader.js`, `SkeletonUtils.js`, `RGBELoader.js`, `Pass.js`, `UnrealBloomPass.js`, `CopyShader.js`, `LuminosityHighPassShader.js`, `FXAAShader.js` | three.js r147 add-ons, MIT |
+| `assets/models/car_concept.glb` (fetched at run time) | your car, inside and out: "Car Concept" from the [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept), © 2024 Darmstadt Graphics Group GmbH, model and textures by Eric Chadwick, [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). Changed here: scaled, the graphite finish chosen, glass simplified, and the driving position (wheel, instrument pod, column, pedals) moved from the centre to the left |
+| `assets/models/hand_*.glb` → `js/vendor/assets.js` | the driver's hands: WebXR "generic hand" models, MIT, © Amazon ([webxr-input-profiles](https://github.com/immersive-web/webxr-input-profiles)) |
 | `assets/hdri/*.hdr` → `js/vendor/assets.js` | sky photos "German Town Street" and "Hansaplatz" from [Poly Haven](https://polyhaven.com), CC0 |
 
 People are rigged, animated models (walk and idle): men and women, children
@@ -330,7 +344,7 @@ trousers, hair and skin. Cyclists keep a simpler figure, since the models
 have no cycling pose. Cars are baked per body type
 into one mesh per material, so a street full of them stays fast.
 
-To refresh them: `node tools/fetch-assets.js`, `node tools/fetch-people.js` and
+To refresh them: `node tools/fetch-assets.js`, `node tools/fetch-people.js`, `node tools/fetch-car.js` and
 `node tools/fetch-lighting.js`, then `powershell -File tools/shrink-textures.ps1`
 and `node tools/shrink-hdr.js`, then `node tools/pack-assets.js`.
 The textures travel as data URIs inside a script because WebGL refuses
