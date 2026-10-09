@@ -3635,7 +3635,9 @@ var GL3D = (function(){
       if (own) own.visible = true;
     }
 
-    var mw = Math.min(w*0.36, 320) * (big ? 1.45 : 1), mh = mw/3.2;
+    /* sized by the width, but on a short landscape phone also by the
+       height, or it hides a third of the road ahead */
+    var mw = Math.min(w*0.36, 320, h*0.55) * (big ? 1.45 : 1), mh = mw/3.2;
     var cx = w/2, cy = h - 18 - mh/2 - (big ? 0 : 4);
     m.ocam.left = 0; m.ocam.right = w; m.ocam.top = h; m.ocam.bottom = 0; m.ocam.updateProjectionMatrix();
     var size = Math.round(mw) + 'x' + Math.round(mh);

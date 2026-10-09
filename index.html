@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#131210">
+<!-- "Add to Home Screen" on a phone: open full screen, like an app -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Kreuzung">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="manifest" href="manifest.webmanifest">
 <title>Kreuzungstrainer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,6 +20,57 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<script>/* Opened inside another app's frame on a phone (e.g. a preview sheet)?
+   The frame can be taller than what is on screen, cutting off the pedals.
+   Measure the part that is really visible and fit the game into it
+   (style.css reads --hide-t / --hide-b under :root.framed). */
+(function(){
+  var root = document.documentElement, framed;
+  try { framed = window.self !== window.top; } catch (e) { framed = true; }
+  if (!framed) return;
+  root.classList.add('framed');
+  if (!matchMedia('(hover:none) and (pointer:coarse)').matches) return;
+
+  var seen = { t:0, b:0 }, cur = { t:-1, b:-1 };
+  function apply(){
+    /* fallback guess: the host's own header (~128px) sits above the frame,
+       so a frame taller than the rest of the screen runs off the bottom */
+    var land = innerWidth > innerHeight;
+    var sh = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+    var guess = Math.max(0, innerHeight - (sh - 128));
+    var t = Math.round(seen.t), b = Math.round(Math.max(seen.b, guess));
+    if (t === cur.t && b === cur.b) return;
+    cur.t = t; cur.b = b;
+    root.style.setProperty('--hide-t', t + 'px');
+    root.style.setProperty('--hide-b', b + 'px');
+    setTimeout(function(){ window.dispatchEvent(new Event('resize')); }, 0);
+  }
+
+  var probe, io;
+  if ('IntersectionObserver' in window){
+    var steps = []; for (var i = 0; i <= 100; i++) steps.push(i / 100);
+    io = new IntersectionObserver(function(list){
+      var e = list[list.length - 1];
+      if (!e.isIntersecting) return;
+      var r = e.boundingClientRect, v = e.intersectionRect;
+      seen.t = Math.max(0, v.top - r.top);
+      seen.b = Math.max(0, r.bottom - v.bottom);
+      apply();
+    }, { threshold: steps });
+  }
+  function watch(){
+    if (!io) return;
+    if (!probe){
+      probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;inset:0;pointer-events:none;visibility:hidden';
+      document.body.appendChild(probe);
+    }
+    io.unobserve(probe); io.observe(probe);
+  }
+  window.addEventListener('resize', function(e){ if (e.isTrusted){ apply(); watch(); } });
+  document.addEventListener('DOMContentLoaded', function(){ apply(); watch(); });
+})();
+</script>
 
 <header id="topbar">
   <div class="brand">
@@ -88,6 +148,8 @@
             <button id="btn-view" class="chip readout btn" type="button">2D</button>
             <!-- the sidebar (and its End drive button) is hidden on narrow screens -->
             <button id="btn-end-hud" class="chip readout btn hidden" type="button" data-t="drive.endShort"></button>
+            <!-- phones hide the top bar while driving: this is the way out of a lesson -->
+            <button id="btn-menu-hud" class="chip readout btn hidden" type="button" data-t="nav.lessons"></button>
           </div>
           <canvas id="minimap" width="360" height="360"></canvas>
         </div>

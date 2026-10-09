@@ -274,6 +274,7 @@
     show('overlay-ref', false);
     show('overlay-fault', false);
     el('btn-end-drive').classList.add('hidden'); el('btn-end-hud').classList.add('hidden');
+    el('btn-menu-hud').classList.remove('hidden');
     applyView();
     resize();
     updateHud();
@@ -323,6 +324,7 @@
     show('overlay-ref', false);
     show('overlay-fault', false);
     el('btn-end-drive').classList.remove('hidden'); el('btn-end-hud').classList.remove('hidden');
+    el('btn-menu-hud').classList.add('hidden');
     applyView();
     resize();
     updateHud();
@@ -1063,21 +1065,58 @@
 
   /* press-and-hold buttons (mouse, touch and pen in one path) */
   function hold(id, onDown, onUp){
-    var n = el(id);
+    var n = el(id), pid = null;
     function down(e){
       e.preventDefault();
+      pid = e.pointerId;
       if (n.setPointerCapture && e.pointerId !== undefined){
         try { n.setPointerCapture(e.pointerId); } catch(err){}
       }
       onDown(); n.classList.add('down');
     }
-    function up(e){ if (e) e.preventDefault(); onUp(); n.classList.remove('down'); }
+    function up(e){ if (e && e.cancelable) e.preventDefault(); pid = null; onUp(); n.classList.remove('down'); }
     n.addEventListener('pointerdown', down);
     n.addEventListener('pointerup', up);
     n.addEventListener('pointercancel', up);
     n.addEventListener('lostpointercapture', up);
     n.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+    /* no long-press text selection, magnifier or callout on iOS; pointer
+       events still arrive, so the press itself is unaffected */
+    n.addEventListener('touchstart', function(e){ if (e.cancelable) e.preventDefault(); }, { passive:false });
+
+    /* iOS, above all inside another app's frame, sometimes loses the
+       button's pointerup and the pedal sticks down. Back-ups: the same
+       finger lifting anywhere, and the touch list no longer holding a
+       finger on (or near) the button. */
+    function held(){ return pid !== null || n.classList.contains('down'); }
+    function release(){ if (held()) up(); }
+    window.addEventListener('pointerup', function(e){ if (e.pointerId === pid) release(); }, true);
+    window.addEventListener('pointercancel', function(e){ if (e.pointerId === pid) release(); }, true);
+    function touchesGone(e){
+      if (!held()) return;
+      var r = n.getBoundingClientRect(), pad = 48;
+      for (var i = 0; i < e.touches.length; i++){
+        var t = e.touches[i];
+        if (t.clientX > r.left - pad && t.clientX < r.right + pad &&
+            t.clientY > r.top - pad  && t.clientY < r.bottom + pad) return;
+      }
+      release();
+    }
+    document.addEventListener('touchend', touchesGone, { passive:true, capture:true });
+    document.addEventListener('touchcancel', touchesGone, { passive:true, capture:true });
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) release(); });
+    window.addEventListener('pagehide', release);
+    window.addEventListener('blur', release);
   }
+
+  /* belt and braces: a selection that still lands on the HUD or the
+     touch controls is cleared at once */
+  document.addEventListener('selectionchange', function(){
+    var sel = window.getSelection && window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.anchorNode) return;
+    var n = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode;
+    if (n && n.closest && n.closest('.controls, #hud')) sel.removeAllRanges();
+  });
 
   /* Drag across the road: when you steer yourself, that is the wheel
      (sideways from where you touched, let go and it centres); otherwise
@@ -1157,6 +1196,7 @@
     el('btn-fault-rewind').onclick = rewindDrive;
     el('btn-end-drive').onclick = endDrive;
     el('btn-end-hud').onclick = endDrive;
+    el('btn-menu-hud').onclick = toMenu;
     el('btn-view').onclick  = toggleView;
     el('btn-ref').onclick   = function(){ buildReference(); show('overlay-ref', true); };
     el('btn-ref-close').onclick = function(){ show('overlay-ref', false); };

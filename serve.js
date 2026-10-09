@@ -5,7 +5,8 @@ const http = require('http'), fs = require('fs'), path = require('path'), os = r
 const PORT = Number(process.argv[2]) || 8080;
 const TYPES = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8',
                 '.js':'text/javascript; charset=utf-8', '.json':'application/json',
-                '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
+                '.png':'image/png', '.svg':'image/svg+xml', '.ico':'image/x-icon',
+                '.webmanifest':'application/manifest+json' };
 
 http.createServer((req, res) => {
   let rel = decodeURIComponent(req.url.split('?')[0]);
